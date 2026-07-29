@@ -109,9 +109,31 @@ characterized — possibly the same lid/display heuristic that gates SPU reporti
 - magic-window demo: correct counter-rotation feel at 30 Hz publish, no prediction needed yet
 - IMU keeps streaming at lid 20° — the screen-face-down stall is not a lid-angle threshold
 
+## Filter comparison (2026-07-29 session, edge-aligned protocol)
+
+Recorded raw session (`wabed --record`, replayed via `wabe-replay`): 30 s still → 30 s hard
+waving → set down edge-aligned (truth: yaw returns to 0) → 3 flat turns CCW → 2 turns CW,
+edge-aligned endpoints.
+
+- Set-down yaw error after waving: ESKF +30.0°, Mahony −8.3°, **VQF −2.2°**
+- Yaw shift across the CCW spin (expected ≈ −2° from scale): ESKF −19.2°, Mahony −17.7°,
+  **VQF −0.28°**
+- Cause of the ESKF/Mahony spin failure: centripetal accel is constant in the body frame and
+  tilts apparent gravity a few degrees; both chase it while yaw winds through 1080°. VQF
+  low-passes accel in the near-inertial frame, where centripetal averages to zero.
+- Gyro z scale factor, from integer-turn spins: −0.195% (CCW 3 turns) / −0.043% (CW 2 turns).
+  ≤0.2% and the two estimates disagree beyond alignment precision → no correction applied;
+  scale is a non-issue at current accuracy.
+
+**VQF (vendored, `Sources/libwabe/vendor`) is the only filter.** ESKF/Mahony were deleted
+after losing the benchmark; the whole computational core (sensor I/O, merge, VQF, pose
+extraction, service) now lives in C behind `include/wabe.h` — Swift is connective tissue
+(demo/cli/replay). The C port was regression-gated against the session replay: settled yaws
+match the Swift implementation to millidegrees.
+
 ## Open items
 
-- gyro scale-factor error: needs a known-reference rotation (turn 90° against a stop)
+- gyro x/y scale (z measured ≤0.2%; only matters if tilted-motion yaw disappoints)
 - thermal bias drift: needs a long soak under CPU load
 - confirm 0xFF00/4 is actually the ALS (diff its 122 B payload against lighting changes)
 - identify 0xFF0C devices

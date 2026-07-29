@@ -1,4 +1,4 @@
-#include "include/wabe_sensor.h"
+#include "wabe_sensor.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>

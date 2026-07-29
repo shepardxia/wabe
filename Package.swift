@@ -4,19 +4,27 @@ import PackageDescription
 let package = Package(
     name: "wabe",
     platforms: [.macOS(.v13)],
+    products: [
+        // All computation lives in the C library: sensor I/O, sample merge, VQF orientation
+        // filter (vendored C++, invisible behind the C API), pose extraction, daemon service.
+        .library(name: "libwabe", targets: ["libwabe"]),
+        .executable(name: "wabed", targets: ["wabed"]),
+    ],
     targets: [
-        // C core: IOKit HID reader for the SPU sensors. Runs its own CFRunLoop thread and
-        // exposes drain-style ring buffers; everything above it is Swift.
         .target(
-            name: "CWabeSensor",
+            name: "libwabe",
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("CoreFoundation"),
+                .linkedLibrary("c++"),
             ]
         ),
-        .target(name: "WabeCore", dependencies: ["CWabeSensor"]),
-        .executableTarget(name: "wabed", dependencies: ["WabeCore"]),
+        // Daemon: thin C shell (args + accel-dead re-exec).
+        .executableTarget(name: "wabed", dependencies: ["libwabe"]),
+        // Swift stays as connective tissue: socket consumers and offline tooling.
         .executableTarget(name: "wabe-cli", dependencies: []),
         .executableTarget(name: "wabe-demo", dependencies: []),
-    ]
+        .executableTarget(name: "wabe-replay", dependencies: ["libwabe"]),
+    ],
+    cxxLanguageStandard: .cxx14
 )
