@@ -5,15 +5,15 @@
 <!-- DEMO GIF -->
 
 A phone is one rigid body. A laptop is two on a hinge, and the hinge angle is readable to 0.01°.
-Compose base attitude with lid angle and you get the orientation of the *display plane*: not
-where the machine points, where the **screen** points. Underneath are the undocumented SPU
-sensors (Bosch BMI286, 795 Hz) and the lid encoder. No root, no entitlements, no kext.
+Compose base attitude with lid angle and you get the orientation of the *display plane*: where
+the **screen** points. Underneath are the undocumented SPU
+sensors (Bosch BMI286, 795 Hz) and the lid encoder, read straight from userspace HID.
 
 ## Install
 
 ```bash
 swift build -c release
-.build/release/wabe install    # launchd agent, starts at login, still no root
+.build/release/wabe install    # launchd agent, starts at login, runs as you
 ```
 
 `wabe status` shows what it sees, `wabe watch` streams a live readout, `wabe uninstall` reverses
@@ -25,14 +25,14 @@ all of it.
 swift run --package-path examples/magic-window   # m: mode · r: recenter · q: quit
 ```
 
-Pick the laptop up and turn it: the screen becomes a window onto a room that stays put. Separate
-package, so installing the service does not build it.
+Pick the laptop up and turn it: the screen becomes a window onto a room that stays put. It lives
+in its own package, so the service builds on its own.
 
 ## Usage
 
 `wabed` publishes newline JSON on `/tmp/wabe.sock`. Write `recenter\n` to zero your heading, or
-`rate 60\n` to pick your update rate. Both are per connection. One client cannot move another
-client's world or dictate its frame rate.
+`rate 60\n` to pick your update rate. Each connection keeps its own heading zero and its own
+rate, so clients stay independent.
 
 ```json
 {"q":[0.9997,-0.0237,0.0009,0.0000], "rpy":[0.109,2.718,-0.000], "lid":108.54,
@@ -41,8 +41,8 @@ client's world or dictate its frame rate.
 
 `q` is base to world (X right, Y toward hinge, Z up). **`n` is the screen normal in world
 frame**, the field the project exists for. In `rpy`, roll and pitch are absolute, measured
-against gravity. Macs ship no magnetometer, so nothing plays that role for yaw: it is relative
-to your last `recenter`, not a compass heading.
+against gravity. Yaw is relative to your last `recenter`, since a magnetometer is the part that
+would make it a compass heading and Macs leave it out.
 
 Or link the C library and skip the socket:
 
@@ -66,7 +66,7 @@ orientation. Vendored, MIT.
 
 `wabed --record` writes raw samples, and `wabe-replay` runs them back through the same code the
 live daemon uses. Sessions are recorded with one laptop edge flush against a straightedge at
-start and finish, so the true heading is known and any drift is measured, not guessed:
+start and finish, so the true heading is known and drift comes out as a measurement:
 
 ```bash
 curl -L -o session.jsonl.gz \
