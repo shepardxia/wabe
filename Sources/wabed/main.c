@@ -11,18 +11,18 @@
 
 int main(int argc, char **argv)
 {
-    wabe_config cfg = {0};
+    wabe_service cfg = {0};
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
         if (!strcmp(a, "--rate") && next) {
-            cfg.sensor_hz = atoi(argv[++i]);
+            cfg.sensors.sensor_hz = atoi(argv[++i]);
         } else if (!strcmp(a, "--pub") && next) {
             cfg.publish_hz = atof(argv[++i]);
         } else if (!strcmp(a, "--sock") && next) {
             cfg.socket_path = argv[++i];
         } else if (!strcmp(a, "--record") && next) {
-            cfg.record_path = argv[++i];
+            cfg.sensors.record_path = argv[++i];
         } else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
             printf("wabed [--rate hz] [--pub hz] [--sock path] [--record raw.jsonl]\n");
             return 0;
@@ -32,7 +32,7 @@ int main(int argc, char **argv)
         }
     }
 
-    int err = wabe_service_run(&cfg);
+    int err = wabe_serve(&cfg);
     if (err == WABE_ERR_ACCEL_DEAD) {
         const char *env = getenv("WABE_RESPAWN");
         int respawns = env ? atoi(env) : 0;

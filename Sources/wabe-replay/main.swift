@@ -68,8 +68,8 @@ print(String(format: "capture: %.1f s, %d accel + %d gyro samples @ %.0f Hz nomi
              gyro.last!.t - t0, accel.count, gyro.count, rate))
 
 // --- replay through libwabe in ~30 Hz slices ---
-let filter = wabe_filter_new(rate)!
-defer { wabe_filter_free(filter) }
+let w = wabe_replay(rate)!
+defer { wabe_stop(w) }
 
 struct Snap {
     let t: Double
@@ -89,18 +89,18 @@ while gi < gyro.count {
     while aj < accel.count, accel[aj].t < sliceEnd { aj += 1 }
     accel[ai..<aj].withUnsafeBufferPointer { ab in
         gyro[gi..<gj].withUnsafeBufferPointer { gb in
-            wabe_filter_feed(filter, ab.baseAddress, ab.count, gb.baseAddress, gb.count)
+            wabe_feed(w, ab.baseAddress, ab.count, gb.baseAddress, gb.count)
         }
     }
     ai = aj
     gi = gj
     if gi > 0 {
-        var p = wabe_pose()
-        wabe_filter_pose(filter, gyro[gi - 1].t, &p)
+        var p = wabe_orientation()
+        wabe_read(w, &p)
         snaps.append(Snap(t: gyro[gi - 1].t,
                           rpy: SIMD3(p.rpy.0, p.rpy.1, p.rpy.2),
                           bias: SIMD3(p.bias.0, p.bias.1, p.bias.2),
-                          still: p.stationary != 0))
+                          still: p.at_rest != 0))
     }
 }
 
