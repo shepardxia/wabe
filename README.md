@@ -44,13 +44,20 @@ wabe_filter_pose(f, t, &p);                          // p.q, p.rpy, p.n, p.stati
 
 Full API in [`Sources/libwabe/include/wabe.h`](Sources/libwabe/include/wabe.h).
 
-## Accuracy
+## The filter
 
-Roll and pitch are absolute — gravity is the reference. Yaw is relative to the last `recenter`,
-since no Mac has a magnetometer; it holds **0.07° at rest** and lands **2.2° off after 30 s of
-hard handling**. Those are errors against known truth, not repeatability: the session starts and
-ends with one laptop edge flush against the same straightedge. Replay it, or point your own
-filter at the same samples:
+Roll and pitch are absolute, because gravity is a reference you always have. Yaw isn't — no Mac
+ships a magnetometer — so it's relative to the last `recenter`, and the only question that
+matters is how fast it rots while you're actually handling the machine.
+
+That makes the filter the whole game. I wrote an error-state EKF for it, tuned it over an
+afternoon, and it lost by about 10× to [VQF](https://github.com/dlaidig/vqf) — so VQF is
+vendored (MIT) and my EKF is deleted.
+
+You don't have to take that on faith. Sessions are recorded with edge-aligned endpoints — one
+laptop edge flush against a straightedge at the start and again at the finish — so yaw error is
+measured against known truth rather than estimated. Replay the same one, or point your own
+filter at the samples:
 
 ```bash
 curl -L -o session.jsonl.gz \
@@ -58,9 +65,7 @@ curl -L -o session.jsonl.gz \
 swift run wabe-replay session.jsonl.gz
 ```
 
-Fusion is [VQF](https://github.com/dlaidig/vqf) (vendored, MIT); an error-state EKF and a Mahony
-filter were written and lost to it by ~10× on these captures. That comparison, the sensor
-reverse engineering, and every number quoted here live in [NOTES.md](NOTES.md).
+Numbers, the full comparison, and the sensor reverse engineering: [NOTES.md](NOTES.md).
 
 ## Credit
 
