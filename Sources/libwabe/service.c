@@ -160,7 +160,11 @@ int wabe_service_run(const wabe_config *cfg)
 
         const double now = epoch_now();
         if (ng > 0 && now - last_pub >= pub_interval) {
-            last_pub = now;
+            // Advance on a fixed grid. Resetting the deadline to `now` would fold each cycle's
+            // overshoot into the next period, which cost ~4 Hz at a nominal 30 (measured).
+            last_pub += pub_interval;
+            if (now - last_pub > pub_interval)
+                last_pub = now;  // fell far behind (startup, stall): resync rather than burst
             wabe_filter_set_lid(filter, g_lid_deg);
             if (recorder && g_lid_deg >= 0) {
                 fprintf(recorder, "{\"s\":\"l\",\"t\":%.6f,\"d\":%.2f}\n", now, g_lid_deg);

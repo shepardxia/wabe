@@ -5,3 +5,4 @@ CLAUDE.md
 probes/captures/
 session*.jsonl
 session-wabed.log
+captures/

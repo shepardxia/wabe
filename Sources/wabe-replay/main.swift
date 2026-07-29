@@ -17,13 +17,27 @@ while let a = args.popFirst() {
     switch a {
     case "--out": outDir = args.popFirst() ?? outDir
     case "--help", "-h":
-        print("wabe-replay <capture.jsonl> [--out dir]")
+        print("wabe-replay <capture.jsonl[.gz]> [--out dir]")
         exit(0)
     default: capturePath = a
     }
 }
-guard let capturePath, let data = FileManager.default.contents(atPath: capturePath) else {
-    FileHandle.standardError.write(Data("usage: wabe-replay <capture.jsonl> — file must exist\n".utf8))
+/// Captures are published gzipped; read either form.
+func readCapture(_ path: String) -> Data? {
+    guard path.hasSuffix(".gz") else { return FileManager.default.contents(atPath: path) }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
+    p.arguments = ["-c", path]
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    guard (try? p.run()) != nil else { return nil }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    p.waitUntilExit()
+    return p.terminationStatus == 0 ? data : nil
+}
+
+guard let capturePath, let data = readCapture(capturePath) else {
+    FileHandle.standardError.write(Data("usage: wabe-replay <capture.jsonl[.gz]> — file must exist\n".utf8))
     exit(2)
 }
 
@@ -90,7 +104,8 @@ while gi < gyro.count {
     }
 }
 
-let stem = URL(fileURLWithPath: capturePath).deletingPathExtension().lastPathComponent
+var stem = URL(fileURLWithPath: capturePath).deletingPathExtension().lastPathComponent
+if capturePath.hasSuffix(".gz") { stem = URL(fileURLWithPath: stem).deletingPathExtension().lastPathComponent }
 let outPath = "\(outDir)/\(stem).replay.jsonl"
 var buf = ""
 for s in snaps {

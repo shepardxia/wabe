@@ -1,46 +1,95 @@
 # wabe
 
-> *'Twas brillig, and the slithy toves*
-> *Did gyre and gimble in the wabe*
+**An orientation service for Apple Silicon MacBooks — including where the screen faces.**
 
-**wabe** (n., per Humpty Dumpty): the grass plot around a sundial — the fixed frame in which
-all the gyring and gimbling happens.
+> *'Twas brillig, and the slithy toves / Did gyre and gimble in the wabe.* The **wabe** is the
+> grass plot around a sundial: the fixed frame all the gyring happens in.
 
-A pose service for Apple Silicon MacBooks. Your laptop has an undocumented IMU (Bosch BMI286
-accelerometer + gyroscope, ~800 Hz) and a lid-angle encoder (0.01° resolution). wabe reads both,
-fuses them, and serves the machine's orientation in the world frame over a unix socket —
-including the **screen-plane pose**, composed from base attitude ⊕ lid hinge angle.
+<!-- DEMO GIF -->
 
-A phone knows where *it* points. A MacBook is a two-body hinged system with an absolute encoder
-on the hinge — wabe knows where the *screen* points. No other library does this composition.
+## The idea
 
-**No root. No entitlements. No kernel extension.** Just IOKit HID from userspace. The engine is
-a plain C library (`libwabe`); read it over a socket from any language, or link it directly.
+Your MacBook has an undocumented IMU (Bosch BMI286 accelerometer + gyroscope) and an absolute
+encoder on the hinge. Existing libraries read one or the other.
 
-## Demo
+A phone is a single rigid body, so its orientation is one number set. A laptop is **two bodies
+on a hinge** — and the hinge angle is directly measurable. Compose base attitude with lid angle
+and you get the orientation of the *display plane*: not where the machine points, where the
+**screen** points.
 
+That composition is what wabe adds. Everything else here exists to make it dependable: a C
+core, a filter chosen by measurement rather than taste, and a way for you to check the numbers
+yourself.
+
+## Get started
+
+```bash
+swift build -c release
+.build/release/wabe install     # launchd agent, starts at login, no root
+wabe status                     # is it up, and what does it see
+wabe watch                      # live readout — tilt the lid and watch `n` swing
 ```
-swift run wabed        # terminal 1: the daemon
-swift run wabe-demo    # terminal 2: the magic window
+
+`wabe install` puts the daemon in `~/.local/bin`, registers a per-user launchd agent, and waits
+for the socket before reporting success. `wabe uninstall` removes all of it. No `sudo` at any
+point — not for the install, not for the sensors.
+
+Then the demo:
+
+```bash
+swift run wabe-demo             # m: mode · r: recenter · [ ]: eye distance · q: quit
 ```
 
-Pick up your laptop and turn it — the screen becomes a window into a fixed room. Three modes on
-the `m` key:
+Pick the laptop up and turn it. The screen becomes a window onto a room that stays put.
 
-- **screen-rotation** *(default)* — view bolted to the screen plane; tilting the lid pans the
-  view at 0.01° resolution
-- **anamorphic window** — the Holbein mode: scene fixed in the room, viewer's eye fixed in front
-  of the machine, and each frame rebuilds an off-axis frustum through the physical glass
-  ([Kooima's generalized perspective projection](http://160592857366.free.fr/joe/ebooks/ShareData/Generalized%20Perspective%20Projection.pdf)).
-  Tilt the screen and the image *shears* so the world stays put — *The Ambassadors*' skull,
-  continuously
-- **base-rotation** — view bolted to the base; lid motion does nothing (comparison mode)
+### Check the numbers yourself
 
-`r` recenters heading, `[` `]` adjusts eye distance, `q` quits.
+The accuracy claims below come from one recorded session, and you can replay it:
 
-## Consuming poses
+```bash
+curl -L -o session.jsonl.gz \
+  https://github.com/shepardxia/wabe/releases/download/captures-v1/session.jsonl.gz
+swift run wabe-replay session.jsonl.gz
+```
 
-`wabed` publishes newline-delimited JSON at 30 Hz (configurable) on `/tmp/wabe.sock`:
+That capture is raw 795 Hz accelerometer and gyroscope samples in the chip frame, recorded with
+`wabed --record` during an **edge-aligned** protocol (`probes/session.py` walks you through
+recording your own): the laptop sits flat with one edge flush against a straightedge, gets
+handled, and returns to the same edge. Start and end headings are physically identical, so the
+true yaw error is known at every re-alignment — and an integer-turn spin has a known true angle.
+
+`wabe-replay` runs a capture through the exact code path the live daemon uses and reports still
+segments, settled yaw, and integrated spin angles. Point your own filter at the same file and
+you have a like-for-like comparison.
+
+## Fact sheet
+
+Measured on a Mac16,6 (M4 Pro), macOS 26.5.
+
+| | |
+|---|---|
+| IMU | Bosch BMI286, accelerometer + gyroscope, **795 Hz** |
+| Lid angle | absolute, **0.01°** resolution |
+| Privileges | none — no root, no entitlements, no kernel extension |
+| CPU | ~2% of one core, full rate |
+| Power | tens of mW — below the noise floor of the measurement |
+| Publish rate | 30 Hz over a unix socket (configurable) |
+| Roll, pitch | absolute, gravity-referenced, drift-free |
+| Yaw | relative to the last `recenter` — no Mac has a magnetometer |
+| Yaw at rest | ≤ 0.07° peak-to-peak, drift under 0.1°/min |
+| Yaw after 30 s of hard handling | 2.2° |
+| Yaw across a 1080° spin | 0.28° |
+| Yaw across a 720° spin | 0.08° |
+| Accelerometer stream | dies on ~40% of opens (driver bug); the daemon detects a dry stream in 250 ms and re-execs |
+
+Orientation fusion is [VQF](https://github.com/dlaidig/vqf) (Laidig & Seel 2023, vendored, MIT).
+An error-state EKF and a Mahony complementary filter were also written and run against the same
+edge-aligned captures; VQF beat both by roughly 10× on every dynamic measure, so they were
+deleted instead of kept as options. The comparison is in [NOTES.md](NOTES.md).
+
+## Using it
+
+`wabed` publishes newline-delimited JSON on `/tmp/wabe.sock`:
 
 ```json
 {"t":1785292089.01, "q":[0.9997,-0.0237,0.0009,0.0000],
@@ -51,112 +100,53 @@ the `m` key:
 | field | meaning |
 |---|---|
 | `q` | base→world quaternion (w, x, y, z). Base frame: X right, Y toward hinge, Z up |
-| `rpy` | roll/pitch absolute (gravity-referenced), yaw **relative** to last recenter, degrees |
-| `lid` | hinge angle, 0.01° resolution |
-| `n` | screen-plane normal in world frame (base ⊕ lid — where the display points) |
-| `bias` | current gyro bias estimate, °/s |
-| `stat` | stationary flag |
+| `rpy` | roll, pitch, yaw in degrees |
+| `lid` | hinge angle |
+| `n` | **screen-plane normal** in the world frame — where the display points |
+| `bias` | gyroscope bias estimate, °/s |
+| `stat` | at rest |
 
-Send `recenter\n` on the same socket to zero the heading. `wabe-cli watch` gives a live readout.
+Write `recenter\n` to the same socket to zero the heading.
 
-## Embedding it
-
-The socket is the language-agnostic path; the whole engine is also a plain C library with no
-Swift or Objective-C in the call path. `libwabe` is the sensor I/O, the fusion, and the daemon
-— Swift in this repo is only the demo, the CLI, and the offline tools.
+The engine underneath is a plain C library with no Swift in the call path — Swift here is only
+the CLI, the demo, and the offline tools. Link it directly and skip the socket:
 
 ```c
 #include <wabe.h>
 
 wabe_filter *f = wabe_filter_new(795.0);
-wabe_filter_feed(f, accel, n_accel, gyro, n_gyro);  // chip-frame batches, time-ascending
+wabe_filter_feed(f, accel, n_accel, gyro, n_gyro);   // chip-frame batches
 wabe_filter_set_lid(f, 108.54);
 
 wabe_pose p;
-wabe_filter_pose(f, t, &p);      // p.q, p.rpy, p.n, p.bias, p.stationary
+wabe_filter_pose(f, t, &p);        // p.q, p.rpy, p.n, p.bias, p.stationary
 ```
 
-The filter half is pure computation, so it runs equally well on recorded samples — that's all
-`wabe-replay` is. `wabe_service_run(&cfg)` is the whole daemon behind one call. Full API in
+The filter half is pure computation, which is why the same code serves the live daemon and the
+offline replay. `wabe_service_run(&cfg)` is the entire daemon behind one call. Full API in
 [`Sources/libwabe/include/wabe.h`](Sources/libwabe/include/wabe.h).
-
-## Accuracy
-
-Roll and pitch are absolute and drift-free — gravity is the reference. Yaw has no absolute
-reference (Macs have no magnetometer), so wabe serves it as honest relative heading from the
-last `recenter`, and the question that matters is how fast it degrades.
-
-Ground truth here is edge alignment: the machine sits flat with one edge flush against a
-straightedge, so every return to that position has a known true heading, and an integer-turn
-spin has a known true angle. `probes/session.py` walks the protocol, `wabed --record` captures
-raw samples, `wabe-replay` runs them back through the exact filter path the daemon uses.
-
-| condition | yaw error |
-|---|---|
-| parked (still segments, 21–77 s) | ≤ 0.07° peak-to-peak, drift under 0.1°/min |
-| picked up, handled hard 30 s, set back down | 2.2° |
-| across a 1080° flat spin (3 turns) | 0.28° |
-| across a 720° flat spin (2 turns) | 0.08° |
-
-Gyro z-axis scale error measured ≤0.2% from those spins, with the two directions disagreeing by
-more than the alignment precision — so no scale correction is applied; it isn't the limiting
-term.
-
-## What's inside
-
-```
-Sources/libwabe/       the engine, in C: SPU sensor I/O (795 Hz rings, lid poll), sample
-                       merge + VQF fusion, pose extraction, daemon service
-Sources/wabed/         daemon: thin C shell (args + the accel-stall re-exec)
-Sources/wabe-cli/      watch / recenter (Swift socket client)
-Sources/wabe-demo/     SceneKit magic window, three modes (Swift)
-Sources/wabe-replay/   offline: replay a raw capture through the live filter path
-probes/                C characterization probes + session.py recording protocol
-NOTES.md               the findings — read this before touching sensor code
-```
-
-Orientation fusion is [VQF](https://github.com/dlaidig/vqf) (Laidig & Seel 2023, vendored, MIT).
-An error-state EKF and a Mahony filter were built and benchmarked against it on the edge-aligned
-sessions above; VQF beat both by roughly 10× on every dynamic metric, so they were deleted
-rather than kept as options. The comparison is recorded in [NOTES.md](NOTES.md).
-
-Filter work is reproducible offline: `wabed --record raw.jsonl` writes chip-frame samples, and
-`wabe-replay raw.jsonl` runs them back through the same code the daemon executes, reporting
-still segments, settled yaw, and integrated spin angles. Nothing about a filter change needs to
-be evaluated by waving a laptop twice.
-
-Highlights from [NOTES.md](NOTES.md), all measured on Mac16,6 / macOS 26.5:
-
-- **The IMU needs no root** — contrary to all prior art. It's asleep by default; three registry
-  property writes on `AppleSPUHIDDriver` wake it, and they're permitted from userspace
-  (`SensorPropertyReportingState`, `SensorPropertyPowerState`, `ReportInterval`)
-- **Native rate is ~795 Hz** — the "100 Hz" in existing libraries is their own decimation
-- **The lid angle has a hidden 0.01° report** — input report 7; everyone else reads the 1° one
-  (and `IOHIDDeviceGetValue` on it returns 0 — you must use `GetReport`)
-- **The accel stream stalls stochastically at open** (~40% of opens, sticky per process, driver
-  bug); wabed detects a dry stream in 250 ms and re-execs itself — 15/15 clean launches
-- Total power cost of the whole pipeline at full rate: below the measurement noise floor
-  (~tens of mW)
 
 ## Requirements
 
-- Apple Silicon MacBook (developed and verified on M4 Pro; the SPU devices exist on M1+,
-  reports vary by generation)
-- macOS 13+, Xcode command line tools
+Apple Silicon MacBook, macOS 13+, Xcode command line tools. Developed and verified on an M4 Pro;
+the SPU sensors exist on M1 and later, but report formats vary by generation and only this one
+has been confirmed.
 
-## Prior art
+## Credit
 
-- [samhenrigold/LidAngleSensor](https://github.com/samhenrigold/LidAngleSensor) — original lid
-  sensor reverse engineering
+- [samhenrigold/LidAngleSensor](https://github.com/samhenrigold/LidAngleSensor) — the original
+  lid-angle reverse engineering
 - [olvvier/apple-silicon-accelerometer](https://github.com/olvvier/apple-silicon-accelerometer)
-  — found the IMU, documented the wire format
-- [taigrr/apple-silicon-accelerometer](https://github.com/taigrr/apple-silicon-accelerometer)
-  — Go port; the driver wake sequence came from here
-- [dlaidig/vqf](https://github.com/dlaidig/vqf) — the orientation filter (vendored C++, MIT)
+  — found the IMU and documented its wire format
+- [taigrr/apple-silicon-accelerometer](https://github.com/taigrr/apple-silicon-accelerometer) —
+  Go port; the driver wake sequence came from here
+- [dlaidig/vqf](https://github.com/dlaidig/vqf) — the orientation filter
 
-wabe stands on those shoulders and adds: the no-root finding, the 0.01° lid report, the stall
-characterization + workaround, physically-verified axis conventions, the screen-plane
-composition, and the pose service itself.
+Built on top of that work, wabe adds the screen-plane composition, the pose service, and a set
+of findings recorded in [NOTES.md](NOTES.md): the sensors run at 795 Hz rather than the 100 Hz
+usually reported, the lid angle has a hidden 0.01° report alongside the whole-degree one, the
+accelerometer's stochastic stall at open and how to survive it — and that none of it needs
+`sudo`.
 
 ## License
 

@@ -131,6 +131,17 @@ extraction, service) now lives in C behind `include/wabe.h` — Swift is connect
 (demo/cli/replay). The C port was regression-gated against the session replay: settled yaws
 match the Swift implementation to millidegrees.
 
+## Service / launchd (2026-07-29)
+
+- `ProcessType = Background` in a LaunchAgent plist throttles CPU/IO hard enough to drop the
+  30 Hz publish loop to ~17 Hz (measured; same binary in the foreground held 28–30). Omit the
+  key — the default is Standard. Do not "helpfully" re-add it.
+- The publish deadline must advance on a fixed grid (`last_pub += interval`), not reset to the
+  current time: resetting folds each cycle's overshoot into the next period and cost ~4 Hz at a
+  nominal 30. Resync to `now` only when a full period behind.
+- `KeepAlive` does restart the daemon, but a restart takes ~5 s when the accel stream comes up
+  dead and wabed burns re-exec attempts. Don't conclude the agent is broken before ~10 s.
+
 ## Open items
 
 - gyro x/y scale (z measured ≤0.2%; only matters if tilted-motion yaw disappoints)

@@ -9,6 +9,7 @@ let package = Package(
         // filter (vendored C++, invisible behind the C API), pose extraction, daemon service.
         .library(name: "libwabe", targets: ["libwabe"]),
         .executable(name: "wabed", targets: ["wabed"]),
+        .executable(name: "wabe", targets: ["wabe"]),
     ],
     targets: [
         .target(
@@ -22,7 +23,7 @@ let package = Package(
         // Daemon: thin C shell (args + accel-dead re-exec).
         .executableTarget(name: "wabed", dependencies: ["libwabe"]),
         // Swift stays as connective tissue: socket consumers and offline tooling.
-        .executableTarget(name: "wabe-cli", dependencies: []),
+        .executableTarget(name: "wabe", dependencies: []),
         .executableTarget(name: "wabe-demo", dependencies: []),
         .executableTarget(name: "wabe-replay", dependencies: ["libwabe"]),
     ],
