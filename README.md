@@ -1,9 +1,6 @@
 # wabe
 
-> ...did gyre and gimble in the wabe.
-
-**An orientation service for Apple Silicon MacBooks: it reads the undocumented chassis IMU and
-hinge encoder, and publishes where the screen plane points in world coordinates.**
+**An orientation service for MacBooks to gyre and gimble in the wabe.**
 
 <!-- DEMO GIF -->
 
