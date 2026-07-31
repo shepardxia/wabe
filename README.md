@@ -1,15 +1,17 @@
 # wabe
 
-**A service that tracks which way your MacBook's screen is facing.**
+> ...did gyre and gimble in the wabe.
+
+**An orientation service for Apple Silicon MacBooks: it reads the undocumented chassis IMU and
+hinge encoder, and publishes where the screen plane points in world coordinates.**
 
 <!-- DEMO GIF -->
 
-The lid angle is readable to 0.01°. Compose it with the chassis attitude and you get the
-orientation of the display plane: where the screen points, not where the base sits. Underneath
-are the undocumented SPU sensors (Bosch BMI286, 795 Hz) and the lid encoder, read from userspace
-HID, with [VQF](https://github.com/dlaidig/vqf) turning accelerometer and gyroscope into orientation.
+Attitude comes from the SPU IMU (Bosch BMI286, 795 Hz) through [VQF](https://github.com/dlaidig/vqf);
+the hinge reads to 0.01°. Compose them and you have the display plane, which is not the base the
+laptop is sitting on, and is the one thing nothing else on the machine reports. Userspace HID.
 
-macOS 13+ on an Apple Silicon MacBook, MIT. It all runs as your own user; `sudo` is never needed.
+macOS 13+ on an Apple Silicon MacBook. Runs as your own user; `sudo` is never needed.
 
 ## Install
 
