@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Record a wabe calibration session: guided protocol, raw capture, time markers.
+"""Record a wabe session: guided protocol, raw capture, time markers.
 
-Produces a capture that can be replayed offline (`wabe-replay`) to evaluate any orientation
-filter against known ground truth. Ground truth comes from edge alignment — the laptop sits
-flat with one edge flush against a straightedge, so returning to that position has a known
-true heading, and an integer-turn spin has a known true angle.
+Two lengths:
 
-Usage: probes/session.py [name]
-Env:   FAST=1  three-second phases, for dry runs
-       SAY=0   no voice prompts
+  quick (default, ~45 s)  sanity check. Does the pipeline work, and does orientation come
+                          back where it started after you pick the machine up?
+  full  (~3 min)          calibration. Adds flat spins through known angles, which is what
+                          turns yaw error into a measurement rather than an impression.
+
+Both use edge alignment for ground truth: rest one laptop edge flush against a straightedge
+(a book, the desk edge, anything that stays put) so returning to it has a known true heading.
+
+  probes/session.py                # quick
+  probes/session.py --full         # calibration
+  probes/session.py --name spins   # capture name
+  probes/session.py --say          # speak the prompts as well as printing them
 """
+import argparse
 import json
 import os
 import subprocess
@@ -17,99 +24,92 @@ import sys
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WABED = f"{REPO}/.build/release/wabed"
-if not os.path.exists(WABED):
-    WABED = f"{REPO}/.build/debug/wabed"
-FAST = os.environ.get("FAST") == "1"
-VOICE = os.environ.get("SAY") != "0"
-
-NAME = sys.argv[1] if len(sys.argv) > 1 else "session"
 OUTDIR = f"{REPO}/captures"
-CAP = f"{OUTDIR}/{NAME}.jsonl"
-MARKS = f"{OUTDIR}/{NAME}-markers.jsonl"
 
-# (marker, spoken instruction, seconds to hold | None = wait for Enter)
-PROTOCOL = [
-    ("still_aligned", "Hands off. Thirty seconds still.", 30),
-    ("wave", "Pick it up. Wave and tilt it hard.", 30),
-    ("setdown", "Set it down flush against the edge. Hands off for one minute.", 60),
-    ("spin_ccw", "Spin it flat on the desk: three full turns counter-clockwise, "
-                 "then re-align flush and press Enter.", None),
-    ("spin_ccw_rest", "Hands off. Twenty seconds.", 20),
-    ("spin_cw", "Three full turns clockwise, re-align flush, press Enter.", None),
-    ("spin_cw_rest", "Hands off. Twenty seconds.", 20),
+# (marker, prompt, seconds | None = wait for Enter)
+QUICK = [
+    ("still", "Hands off. 10 seconds.", 10),
+    ("handling", "Pick it up, turn and tilt it. 15 seconds.", 15),
+    ("setdown", "Set it back down against the edge. Hands off, 15 seconds.", 15),
+]
+
+FULL = [
+    ("still", "Hands off. 20 seconds.", 20),
+    ("handling", "Pick it up, wave and tilt it hard. 30 seconds.", 30),
+    ("setdown", "Set it back down against the edge. Hands off, 40 seconds.", 40),
+    ("spin_ccw", "Spin it flat, three full turns counter-clockwise, re-align, press Enter.", None),
+    ("spin_ccw_rest", "Hands off. 20 seconds.", 20),
+    ("spin_cw", "Three full turns clockwise, re-align, press Enter.", None),
+    ("spin_cw_rest", "Hands off. 20 seconds.", 20),
 ]
 
 
-def say(text):
-    print(f"\n>>> {text}", flush=True)
-    if VOICE:
-        subprocess.run(["say", text], check=False)
-
-
-def hold(seconds):
-    for remaining in range(seconds, 0, -1):
-        print(f"\r    {remaining:3d} s ", end="", flush=True)
-        time.sleep(1)
-    print("\r    done   ")
-
-
-def start_daemon(args, log):
-    return subprocess.Popen([WABED] + args, stdout=log, stderr=log, start_new_session=True)
+def wabed_path():
+    for build in ("release", "debug"):
+        p = f"{REPO}/.build/{build}/wabed"
+        if os.path.exists(p):
+            return p
+    sys.exit("wabed not built — run `swift build -c release` first")
 
 
 def main():
-    if not os.path.exists(WABED):
-        sys.exit("wabed not built — run `swift build -c release` first")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--full", action="store_true", help="calibration protocol with spins")
+    ap.add_argument("--name", default="session", help="capture name (default: session)")
+    ap.add_argument("--say", action="store_true", help="speak prompts aloud")
+    args = ap.parse_args()
+
+    protocol = FULL if args.full else QUICK
+    total = sum(s for _, _, s in protocol if s)
+    cap = f"{OUTDIR}/{args.name}.jsonl"
+    wabed = wabed_path()
+
+    def say(text):
+        print(f"\n>>> {text}", flush=True)
+        if args.say:
+            subprocess.run(["say", text], check=False)
+
+    def hold(seconds):
+        for left in range(seconds, 0, -1):
+            print(f"\r    {left:3d} s ", end="", flush=True)
+            time.sleep(1)
+        print("\r    ok      ")
+
+    print(f"{'calibration' if args.full else 'quick check'}: about {total} s, plus the pauses")
+    print("Lay the laptop FLAT with one edge FLUSH against a straightedge.")
+    input("Enter to start... ")
+
     os.makedirs(OUTDIR, exist_ok=True)
-
-    print(f"wabe recording session: {NAME}")
-    print(f"  capture {CAP}\n  markers {MARKS}")
-    input("\nLaptop FLAT on the desk, one edge FLUSH against a straightedge. Enter to start... ")
-
     subprocess.run(["pkill", "-f", "wabed"], capture_output=True, check=False)
     time.sleep(1)
-    log = open(f"{OUTDIR}/{NAME}-wabed.log", "a")
-    start_daemon(["--record", CAP], log)
+    log = open(f"{OUTDIR}/{args.name}-wabed.log", "a")
+    subprocess.Popen([wabed, "--record", cap], stdout=log, stderr=log, start_new_session=True)
     time.sleep(3)
-    if not os.path.exists(CAP) or os.path.getsize(CAP) < 10_000:
-        sys.exit(f"recorder produced no data — check {OUTDIR}/{NAME}-wabed.log")
+    if not os.path.exists(cap) or os.path.getsize(cap) < 10_000:
+        sys.exit(f"the daemon recorded nothing — see {OUTDIR}/{args.name}-wabed.log")
 
-    marks = open(MARKS, "w", buffering=1)
-
-    def mark(phase):
-        # Both clocks: samples are stamped CLOCK_MONOTONIC, humans read epoch.
-        marks.write(json.dumps({"phase": phase, "epoch": time.time(),
-                                "mono": time.clock_gettime(time.CLOCK_MONOTONIC)}) + "\n")
-
+    marks = open(f"{OUTDIR}/{args.name}-markers.jsonl", "w", buffering=1)
     try:
-        mark("recording_start")
-        for phase, instruction, seconds in PROTOCOL:
-            mark(phase)
-            say(instruction)
+        for phase, prompt, seconds in protocol:
+            # Both clocks: samples carry CLOCK_MONOTONIC, humans read epoch.
+            marks.write(json.dumps({"phase": phase, "epoch": time.time(),
+                                    "mono": time.clock_gettime(time.CLOCK_MONOTONIC)}) + "\n")
+            say(prompt)
             if seconds is None:
                 input("    Enter when re-aligned... ")
-            elif FAST:
-                hold(3)
-            elif seconds > 10:
-                hold(seconds - 5)
-                say("Five seconds.")
-                hold(5)
             else:
                 hold(seconds)
-        mark("session_end")
-        say("Done.")
+        marks.write(json.dumps({"phase": "end", "epoch": time.time(),
+                                "mono": time.clock_gettime(time.CLOCK_MONOTONIC)}) + "\n")
     finally:
         marks.close()
         subprocess.run(["pkill", "-f", "wabed"], capture_output=True, check=False)
         time.sleep(1)
-        start_daemon([], log)  # restore the ordinary daemon
+        subprocess.Popen([wabed], stdout=log, stderr=log, start_new_session=True)
 
-    raw = os.path.getsize(CAP)
-    subprocess.run(["gzip", "-kf", CAP], check=True)
-    gz = os.path.getsize(CAP + ".gz")
-    print(f"\ncapture: {CAP} ({raw/1e6:.1f} MB, {gz/1e6:.1f} MB gzipped)")
-    print(f"replay:  swift run wabe-replay {CAP}.gz")
+    subprocess.run(["gzip", "-kf", cap], check=True)
+    print(f"\ncaptured {os.path.getsize(cap) / 1e6:.1f} MB -> {cap}")
+    print(f"replay it:  swift run wabe-replay {cap}.gz")
 
 
 if __name__ == "__main__":

@@ -33,14 +33,18 @@ int main(int argc, char **argv)
     }
 
     int err = wabe_serve(&cfg);
-    if (err == WABE_ERR_ACCEL_DEAD) {
+    // Both stream stalls are per-process dice; a fresh process rerolls them.
+    if (err == WABE_ERR_ACCEL_DEAD || err == WABE_ERR_GYRO_DEAD) {
         const char *env = getenv("WABE_RESPAWN");
         int respawns = env ? atoi(env) : 0;
         if (respawns >= 5) {
-            fprintf(stderr, "wabed: accel dead after %d respawns, giving up\n", respawns);
+            fprintf(stderr, "wabed: IMU stream still dead after %d respawns, giving up. This is a\n"
+                            "       driver stall, not a config error; try again, and see NOTES.md.\n",
+                    respawns);
             return 1;
         }
-        fprintf(stderr, "wabed: accel dead, re-exec (%d/5)\n", respawns + 1);
+        fprintf(stderr, "wabed: %s stream dead, re-exec (%d/5)\n",
+                err == WABE_ERR_ACCEL_DEAD ? "accelerometer" : "gyroscope", respawns + 1);
         char buf[16];
         snprintf(buf, sizeof(buf), "%d", respawns + 1);
         setenv("WABE_RESPAWN", buf, 1);
@@ -53,10 +57,15 @@ int main(int argc, char **argv)
     }
     if (err != WABE_OK) {
         static const char *msgs[] = {
-            [WABE_ERR_WAKE] = "SPU wake failed — no AppleSPUHIDDriver services accepted properties",
-            [WABE_ERR_OPEN] = "sensor reader failed to start (accel/gyro not openable)",
-            [WABE_ERR_SOCKET] = "bind/listen failed on socket",
-            [WABE_ERR_RECORD] = "cannot open record file",
+            [WABE_ERR_WAKE] = "no AppleSPUHIDDriver service accepted the wake properties. This Mac\n"
+                              "       most likely has no SPU IMU: it arrived with M2 and is absent on\n"
+                              "       Intel, M1 and desktop Macs. See NOTES.md for model coverage.",
+            [WABE_ERR_OPEN] = "the sensors are present but would not open",
+            [WABE_ERR_LAYOUT] = "the IMU sends reports, but none of its byte offsets hold gravity,\n"
+                                "       so this Mac lays them out in a way wabe has not seen. Refusing\n"
+                                "       to publish guessed values. Please open an issue with the model.",
+            [WABE_ERR_SOCKET] = "could not bind the socket (detail above)",
+            [WABE_ERR_RECORD] = "could not open the capture file (detail above)",
         };
         fprintf(stderr, "wabed: %s\n", msgs[err] ? msgs[err] : "unknown error");
         return 1;

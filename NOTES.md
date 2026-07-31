@@ -1,26 +1,28 @@
-# Sensor findings — Mac16,6 (M4 Pro MBP), macOS 26.5, 2026-07-28
+# Sensor findings
 
-Everything below was measured on this machine with the probes in `probes/`. Where it contradicts
-the public repos (olvvier/taigrr `apple-silicon-accelerometer`), the public repos are wrong or
-outdated — this was verified directly.
+What the SPU sensors on an Apple Silicon MacBook actually do, measured on a Mac16,6 (M4 Pro,
+14-inch) running macOS 26.5. Where this contradicts the public repos
+(olvvier/taigrr `apple-silicon-accelerometer`), it was checked directly on hardware. The one-off
+probes that produced these numbers were deleted once the numbers were written down; `probes/`
+keeps only what is still run.
 
-## Device map (SPU transport, IOKit HID)
+## Device map
 
-| page   | usage | device                | report                              |
-|--------|-------|-----------------------|-------------------------------------|
-| 0xFF00 | 3     | accelerometer (BMI286)| 22 B input, x/y/z int32 LE @ 6/10/14, ÷65536 → g |
-| 0xFF00 | 9     | gyroscope (BMI286)    | same format, ÷65536 → deg/s         |
-| 0xFF00 | 4     | ALS (presumed, unconfirmed) | 122 B input, streams unprivileged |
-| 0xFF00 | 5, 0xFF | unknown             | 14 B / 1 B, silent                  |
-| 0xFF0C | 1, 5  | unknown               | 5 B / 100 B, 0xFF0C/1 streams sparse events |
-| 0x0020 | 0x8A  | lid angle sensor      | see below                           |
+SPU transport, reached through IOKit HID.
 
-## Key discoveries
+| page   | usage   | device                      | report |
+|--------|---------|-----------------------------|--------|
+| 0xFF00 | 3       | accelerometer (BMI286)      | 22 B input, x/y/z int32 LE at 6/10/14, ÷65536 → g |
+| 0xFF00 | 9       | gyroscope (BMI286)          | same format, ÷65536 → deg/s |
+| 0xFF00 | 4       | ALS (presumed, unconfirmed) | 122 B input, streams unprivileged |
+| 0xFF00 | 5, 0xFF | unknown                     | 14 B / 1 B, silent |
+| 0xFF0C | 1, 5    | unknown                     | 5 B / 100 B, 0xFF0C/1 streams sparse events |
+| 0x0020 | 0x8A    | lid angle sensor            | see below |
 
-### 1. No root needed — anywhere (contradicts both public repos)
+## Getting at the IMU
 
-The IMU is asleep by default. Waking it = setting three registry properties on every
-`AppleSPUHIDDriver` service:
+**No root, anywhere.** Both public repos say sudo is required. It is not. The IMU is asleep by
+default; waking it means setting three registry properties on every `AppleSPUHIDDriver` service:
 
 ```
 SensorPropertyReportingState = 1
@@ -28,136 +30,127 @@ SensorPropertyPowerState     = 1
 ReportInterval               = <µs>   (1000 → ~795 Hz actual)
 ```
 
-`IORegistryEntrySetCFProperty` for these succeeds as uid 501. Device open, input-report
-callbacks, GetReport: all unprivileged. Both public repos claim sudo is required; it is not
-(at least on this OS/hardware). Full sleep→silence→wake→795 Hz round trip verified as
-normal user (`probes/setinterval.c`).
+`IORegistryEntrySetCFProperty` succeeds as uid 501, and device open, input-report callbacks and
+GetReport are all unprivileged. Full sleep → silence → wake → 795 Hz round trip verified as a
+normal user (`probes/setinterval.c`). The wake outlives the process that set it: this is registry
+state, not a per-client subscription.
 
-The wake persists after the setting process exits (registry state, not per-client).
+**Native rate is ~795 Hz, not 100.** The public repos report ~100 Hz because they decimate by 8
+in userspace *after* delivery, which saves neither wakeups nor power. `ReportInterval` is the only
+real lever: 1000 µs measured 795 Hz, 10000 µs measured 99.5 Hz.
 
-### 2. Real rate is ~795 Hz, not 100 Hz
+## Lid angle
 
-Public repos report ~100 Hz because they decimate by 8 in userspace *after* delivery
-(saves no wakeups, no power). `ReportInterval` is the only real rate lever:
-1000 µs → 795 Hz measured; 10000 µs → 99.5 Hz measured.
+Input report 1 carries whole degrees (3 B, `[01, lo, hi]`) and is what every public LAS project
+reads. Input report 7 (usage 0x545, unit exponent −2) carries the same angle at **0.01°**:
+`[07, lo, hi, 00, 00]`, e.g. 0x2B51 = 110.89°. A third path exists — feature report 1, whole
+degrees, which is what pybooklid uses. All three answer on this machine; libwabe probes them
+finest-first and takes whichever responds plausibly.
 
-### 3. Lid angle at 0.01° resolution, unprivileged
+Trap: `IOHIDDeviceGetValue` on report 7's element returns 0. `IOHIDDeviceGetReport` returns live
+data. Poll via GetReport.
 
-LAS (0x20/0x8A) exposes input report 1 = whole degrees (3 B: `[01, lo, hi]`) — this is what
-all public LAS projects read. Input report 7 (usage 0x545, unit exponent −2) carries the same
-angle at 0.01°: `[07, lo, hi, 00, 00]`, e.g. 0x2B51 = 110.89°.
+The encoder is unprivileged, always on, and needs no wake. It is a **separate part from the IMU**
+with separate model coverage, so a machine can have orientation and no screen normal.
 
-Gotcha: `IOHIDDeviceGetValue` on report-7's element returns 0. `IOHIDDeviceGetReport`
-(input type, id 7) returns live data. Poll via GetReport.
+## The accelerometer stall
 
-LAS works fully unprivileged, always-on, no wake needed.
+The accelerometer input stream fails to start on roughly 40% of opens: `IOHIDDeviceOpen`
+succeeds, callbacks never fire. The gyro was never observed to stall (0/30+ runs); the polled lid
+is unaffected.
 
-### 4. Screensaver sandbox blocks all of it
+- decided at open time — a stream that starts never dies mid-run
+- sticky per process: close and reopen never revived it (12/12 dead, twice), nor did bouncing
+  driver ReportingState, nor seize-open. A fresh IOHIDManager revived a few at attempt 2
+- a new process rolls fresh dice, and the next launch usually streams
+- reproduces in any process, any thread, wake or not, either open order
 
-`.saver` bundles run inside `legacyScreenSaver.appex` (`com.apple.security.app-sandbox`, no
-`device.*` entitlements). Under that sandbox `IOHIDDeviceOpen` → `0xe00002e2` on every SPU
-device (enumeration still works). Verified with an ad-hoc-signed sandboxed binary mirroring
-the appex entitlements.
+Workaround: verify reports flow within 250 ms of open (3 attempts, fresh manager each), and if
+the stream stays dry, `execv` self. Capped via `WABE_RESPAWN`. 15/15 launches healthy since.
 
-Fallback proven: the sandbox *can* read arbitrary paths
-(`temporary-exception.files.absolute-path.read-only = /`), so an outside process writing
-`/tmp/...` is readable from a saver. Network client/server entitlements also present.
+Under launchd this makes a restart take ~5 s, because the re-exec attempts happen first. Don't
+conclude the agent is broken before ~10 s.
 
-Note: programmatic screensaver triggering is dead on this OS (`ScreenSaverEngine -module`
-and legacy `moduleDict` both ignored; selection lives in the wallpaper Index.plist store).
+Separately: putting the machine face down on the desk stops IMU streaming entirely and something
+re-asserts sensor sleep. It recovers on returning level. Not a lid-angle threshold, since the IMU
+streams fine at lid 20°. Uncharacterized.
 
-### 5. Accel stream stall (driver bug, workaround required)
+## Measurements
 
-The accelerometer (0xFF00/3) input stream fails to start on roughly 40% of device opens:
-`IOHIDDeviceOpen` succeeds, callbacks never fire. Gyro was never observed to stall (0/30+ runs);
-lid (polled GetReport) unaffected. Measured properties:
+- accelerometer scale: mean |v| = 0.989 g at rest, so ~1.1% scale error (a six-position tumble
+  would fix it)
+- gyroscope noise at rest: ~0.2 deg/s
+- gyroscope bias: order 0.1 deg/s per axis, stable enough that a still window measures it
+- raw yaw drift after subtracting bias, static 90 s: 0.05° total. Yaw is the *least* drifty axis
+  on this chip (roll −0.22°/min, pitch −0.05°/min)
+- power, medians of n=12 and noisy enough that spreads exceed the deltas: asleep → awake-idle
+  +7 mW, → 100 Hz subscription +45 mW, → 795 Hz +76 mW. Rate and sleep toggles are not a battery
+  feature
 
-- decided at open time — streams that start never die mid-run
-- sticky per process instance: close+reopen never revived (12/12 dead, twice); driver
-  ReportingState bounce and seize-open don't help either; a fresh IOHIDManager + reopen
-  revived a few instances at attempt 2, most stay dead
-- a NEW process rolls fresh dice — the very next launch typically streams fine
-- reproduces in any process (probes included), any thread, wake or no wake, either open order
+## Orientation
 
-Workaround in `wabed`: verify reports flow within 250 ms of open (3 attempts, fresh manager
-each); if accel stays dry, `execv` self (capped, `WABE_RESPAWN` env counts). 15/15 launches
-healthy with this in place.
+**Axis maps**, physically verified: accelerometer base = −chip, gyroscope base = +chip, because
+the readout triad is left-handed and a gyro is a pseudo-vector. Base frame is X right, Y toward
+the hinge, Z up. Pitch sign confirmed by a live lift test (+15° physical read +15° published).
 
-Separate observation: putting the machine screen-face-down on the desk (lid ~90°) stopped IMU
-streaming entirely and something re-asserted sensor sleep; recovered on returning level. Not yet
-characterized — possibly the same lid/display heuristic that gates SPU reporting.
+**Screen normal** (base attitude ⊕ lid angle): n_z crosses zero at lid = 90° + base pitch,
+measured 91.4° at pitch +0.35°, and spot checks from 20° to 131° agree to <0.01.
 
-## Measurements (this unit)
+**Filter comparison.** An error-state Kalman filter and a Mahony complementary filter were
+written and benchmarked against VQF on recorded sessions with edge-aligned endpoints (one laptop
+edge flush against a straightedge at start and finish, so true yaw error is known):
 
-- accel scale: mean |v| = 0.989 g at rest → ~1.1% scale error (six-position tumble would fix)
-- gyro noise at rest: ~0.2 deg/s RMS-ish magnitude
-- gyro bias (5 s / 3976-sample average): x +0.125, y −0.103, z +0.011 deg/s
-- yaw drift after bias subtraction, static 90 s: 0.05° total (−0.03°/min). Yaw is the
-  *least* drifty axis here (roll −0.22°/min, pitch −0.05°/min)
-- power (medians, n=12, noisy — spreads ≫ deltas, treat as upper-bound ordering):
-  asleep → awake-idle +7 mW, → 100 Hz sub +45 mW, → 795 Hz sub +76 mW. All negligible;
-  rate/sleep toggles are not a battery feature.
+| | ESKF | Mahony | VQF |
+|---|---|---|---|
+| yaw error after 30 s of hard handling | +30.0° | −8.3° | **−2.2°** |
+| yaw shift across a 1080° flat spin | −19.2° | −17.7° | **−0.28°** |
 
-## Verified end-to-end (2026-07-28 session)
+ESKF and Mahony fail the spin for the same reason: centripetal acceleration is constant in the
+body frame and tilts apparent gravity a few degrees, and both chase it while yaw winds through
+three turns. VQF low-passes acceleration in a near-inertial frame, where centripetal averages
+out. VQF is now the only filter; the other two were deleted.
 
-- axis maps: accel base = −chip, gyro base = +chip (left-handed readout); pitch label sign
-  confirmed by live lift test (+15° physical = +15° published)
-- screen-normal composition: n_z zero-crossing at lid = 90° + base pitch (measured 91.4° at
-  pitch +0.35°, n_z = sin 1.7°); spot-checks across 20°–131° agree to <0.01
-- stationary bias refresh: converges to independently-measured chip bias in ~16 s; steady-state
-  yaw wander ~0.01°/min
-- magic-window demo: correct counter-rotation feel at 30 Hz publish, no prediction needed yet
-- IMU keeps streaming at lid 20° — the screen-face-down stall is not a lid-angle threshold
+Parked yaw under VQF holds within 0.07° peak to peak, drifting under 0.1°/min.
 
-## Filter comparison (2026-07-29 session, edge-aligned protocol)
+**Gyro z scale factor**, from the integer-turn spins: −0.195% (3 turns CCW) and −0.043% (2 turns
+CW). Both ≤0.2%, and they disagree by more than the alignment precision, so no correction is
+applied — scale is not the limiting term.
 
-Recorded raw session (`wabed --record`, replayed via `wabe-replay`): 30 s still → 30 s hard
-waving → set down edge-aligned (truth: yaw returns to 0) → 3 flat turns CCW → 2 turns CW,
-edge-aligned endpoints.
+## Running as a service
 
-- Set-down yaw error after waving: ESKF +30.0°, Mahony −8.3°, **VQF −2.2°**
-- Yaw shift across the CCW spin (expected ≈ −2° from scale): ESKF −19.2°, Mahony −17.7°,
-  **VQF −0.28°**
-- Cause of the ESKF/Mahony spin failure: centripetal accel is constant in the body frame and
-  tilts apparent gravity a few degrees; both chase it while yaw winds through 1080°. VQF
-  low-passes accel in the near-inertial frame, where centripetal averages to zero.
-- Gyro z scale factor, from integer-turn spins: −0.195% (CCW 3 turns) / −0.043% (CW 2 turns).
-  ≤0.2% and the two estimates disagree beyond alignment precision → no correction applied;
-  scale is a non-issue at current accuracy.
+- Never set `ProcessType = Background` in the LaunchAgent plist. It throttles CPU and IO enough
+  to drop a 30 Hz publish loop to ~17 Hz; the same binary in the foreground held 28–30. Omit the
+  key and the default (Standard) behaves.
+- The publish deadline must advance on a fixed grid (`last_pub += interval`). Resetting it to the
+  current time folds each cycle's overshoot into the next period, which cost ~4 Hz at a nominal
+  30. Resync to now only when a full period behind.
 
-**VQF (vendored, `Sources/libwabe/vendor`) is the only filter.** ESKF/Mahony were deleted
-after losing the benchmark; the whole computational core (sensor I/O, merge, VQF, pose
-extraction, service) now lives in C behind `include/wabe.h` — Swift is connective tissue
-(demo/cli/replay). The C port was regression-gated against the session replay: settled yaws
-match the Swift implementation to millidegrees.
+## Hardware coverage
 
-## Service / launchd (2026-07-29)
+Secondhand — only Mac16,6 was tested here.
 
-- `ProcessType = Background` in a LaunchAgent plist throttles CPU/IO hard enough to drop the
-  30 Hz publish loop to ~17 Hz (measured; same binary in the foreground held 28–30). Omit the
-  key — the default is Standard. Do not "helpfully" re-add it.
-- The publish deadline must advance on a fixed grid (`last_pub += interval`), not reset to the
-  current time: resetting folds each cycle's overshoot into the next period and cost ~4 Hz at a
-  nominal 30. Resync to `now` only when a full period behind.
-- `KeepAlive` does restart the daemon, but a restart takes ~5 s when the accel stream comes up
-  dead and wabed burns re-exec attempts. Don't conclude the agent is broken before ~10 s.
+- **IMU**: M2 and later. olvvier lists the M1 MacBook Pro (2020) and the Mac Studio M4 Max as
+  incompatible, so it is laptops only and postdates M1.
+- **Lid encoder**: per community survey (samhenrigold/LidAngleSensor#36), the 14- and 16-inch Pro
+  across all generations, the 15-inch Air, and the 13-inch Air from M2. The 13-inch Pro has none.
+- **Wire format**: the 22-byte layout is documented by olvvier on M3 Pro and measured here on
+  M4 Pro, so it holds across at least those. libwabe discovers the offsets at runtime rather than
+  trusting this.
 
 ## Open items
 
-- gyro x/y scale (z measured ≤0.2%; only matters if tilted-motion yaw disappoints)
-- thermal bias drift: needs a long soak under CPU load
-- confirm 0xFF00/4 is actually the ALS (diff its 122 B payload against lighting changes)
-- identify 0xFF0C devices
-- absolute yaw: unobservable without magnetometer (none present) or camera. Relative yaw
-  + stationary bias refresh + recenter is the design
-- position: double-integration diverges in seconds; out of scope without VIO
+- gyroscope x/y scale factor (z is ≤0.2%; only matters if tilted-motion yaw disappoints)
+- thermal bias drift, which needs a long soak under CPU load
+- absolute yaw is unobservable without a magnetometer (none present) or a camera; relative yaw
+  plus recenter is the design
+- position: double integration diverges in seconds, out of scope without VIO
 
 ## Prior art
 
-- `olvvier/apple-silicon-accelerometer` (Python, 2026-02, 1.2k★) — sensor demo dashboard;
-  wire format + Mahony source
-- `taigrr/apple-silicon-accelerometer` (Go, 2026-02, active) — daemon/shm architecture;
-  the `wakeSPUDrivers` property-write sequence came from here
-- `samhenrigold/LidAngleSensor` (Swift, 2025-09) — original LAS reverse engineering
-- None compose base attitude ⊕ lid angle into a screen-frame pose. That composition is
-  this project's reason to exist.
+- `olvvier/apple-silicon-accelerometer` (Python) — found the IMU, documented the wire format
+- `taigrr/apple-silicon-accelerometer` (Go) — the `wakeSPUDrivers` property sequence came from here
+- `samhenrigold/LidAngleSensor` (Swift) — original lid-angle reverse engineering
+- `tcsenpai/pybooklid` (Python) — the feature-report path to the lid angle
+
+None of them compose base attitude with lid angle into a screen-frame orientation. That
+composition is why this project exists.

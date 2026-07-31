@@ -4,13 +4,19 @@
 #include "internal.h"
 #include "wabe_sensor.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
 #define DRAIN_CAP 2048
-#define LID_POLL_EVERY 50  // drain iterations between lid polls (~100 ms at 2 ms/iteration)
+// Drain iterations between lid polls, at ~2 ms an iteration. One IOHIDDeviceGetReport on the
+// hinge measures 0.67 ms mean, 1.48 ms worst on Mac16,6, so polling every 2nd iteration samples
+// the lid at ~190 Hz for about 12% of this thread — and 100 Hz is what anything tracking the
+// screen plane needs. The old value of 50 left the published lid angle up to 100 ms stale, which
+// is not subtle: it reads as lag on any pivot fast enough to be worth watching.
+#define LID_POLL_EVERY 2
 
 double wabe_now(void)
 {
@@ -55,29 +61,6 @@ static void *drain_loop(void *arg)
             record_samples(w->recorder, 'g', gyro, ng);
         }
 
-        if (w->handler) {
-            const double now = wabe_now();
-            if (now - w->handler_last >= w->handler_interval) {
-                w->handler_last = now;
-                wabe_orientation o;
-                wabe_read(w, &o);
-                void (*fn)(const wabe_orientation *, void *) = w->handler;
-                void *ctx = w->handler_ctx;
-                if (w->handler_queue) {
-                    // Copy: the handler outlives this iteration's stack.
-                    wabe_orientation *copy = malloc(sizeof(o));
-                    if (copy) {
-                        *copy = o;
-                        dispatch_async(w->handler_queue, ^{
-                            fn(copy, ctx);
-                            free(copy);
-                        });
-                    }
-                } else {
-                    fn(&o, ctx);
-                }
-            }
-        }
 
         if (++since_lid >= LID_POLL_EVERY) {
             since_lid = 0;
@@ -99,6 +82,7 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
 {
     const int sensor_hz = cfg && cfg->sensor_hz > 0 ? cfg->sensor_hz : 795;
     const char *record_path = cfg ? cfg->record_path : NULL;
+    const int skip_wake = cfg ? cfg->skip_wake : 0;
     int dummy;
     if (!err)
         err = &dummy;
@@ -107,8 +91,7 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
     int interval = 1000000 / sensor_hz;
     if (interval < 1)
         interval = 1;
-    // WABE_NO_WAKE: skip the driver property writes (sensors must already be awake).
-    if (!getenv("WABE_NO_WAKE") && ws_wake(interval) <= 0) {
+    if (!skip_wake && ws_wake(interval) <= 0) {
         *err = WABE_ERR_WAKE;
         return NULL;
     }
@@ -116,11 +99,27 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         *err = WABE_ERR_OPEN;
         return NULL;
     }
-    // The accelerometer stream is stochastically dead per process instance and nothing
-    // in-process revives it (see NOTES.md). Callers re-exec on this error for a fresh roll.
+    // The IMU streams are stochastically dead per process instance and nothing in-process
+    // revives them (see NOTES.md). Callers re-exec on these for a fresh roll.
+    //
+    // Both matter, and the gyro matters more than it looks: the estimate only advances on gyro
+    // samples, so a live accelerometer with a dead gyro yields a frozen attitude while lid and
+    // timestamps keep moving. That reads as a working stream and is not one, so refuse it.
     if (!(ws_opened_mask() & 1)) {
         ws_stop();
         *err = WABE_ERR_ACCEL_DEAD;
+        return NULL;
+    }
+    if (!(ws_opened_mask() & 2)) {
+        ws_stop();
+        *err = WABE_ERR_GYRO_DEAD;
+        return NULL;
+    }
+    // Reports arrive but no candidate offset produced gravity: the layout is unknown on this
+    // machine and parsing it anyway would publish confident nonsense.
+    if (!ws_layout_known()) {
+        ws_stop();
+        *err = WABE_ERR_LAYOUT;
         return NULL;
     }
 
@@ -134,6 +133,7 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
     if (record_path) {
         w->recorder = fopen(record_path, "w");
         if (!w->recorder) {
+            fprintf(stderr, "wabe: cannot write capture to %s: %s\n", record_path, strerror(errno));
             wabe_stop(w);
             *err = WABE_ERR_RECORD;
             return NULL;
@@ -142,6 +142,11 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         fprintf(w->recorder, "{\"s\":\"meta\",\"rate\":%d,\"start\":%.6f}\n", sensor_hz, wabe_now());
     }
 
+    w->caps.lid_resolution = ws_lid_resolution();
+    if (w->caps.lid_resolution == 0)
+        fprintf(stderr, "wabe: no hinge encoder on this machine; orientation works, "
+                        "screen normal does not\n");
+
     w->tracking = 1;
     if (pthread_create(&w->thread, NULL, drain_loop, w) != 0) {
         w->tracking = 0;
@@ -149,20 +154,23 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         *err = WABE_ERR_OPEN;
         return NULL;
     }
+
+    // Settle the lid before returning, so a negative lid angle means "this machine has no hinge
+    // encoder" rather than "the first poll has not landed yet". Consumers read that distinction
+    // off the published angle, and it is worth 100 ms at startup to make it honest.
+    if (w->caps.lid_resolution > 0) {
+        for (int i = 0; i < 30; i++) {
+            wabe_orientation o;
+            wabe_read(w, &o);
+            if (o.lid_deg >= 0)
+                break;
+            usleep(10000);
+        }
+    }
     return w;
 }
 
-void wabe_on_update(wabe *w, double hz, dispatch_queue_t queue,
-                    void (*handler)(const wabe_orientation *o, void *ctx), void *ctx)
-{
-    pthread_mutex_lock(&w->lock);
-    w->handler = handler;
-    w->handler_ctx = ctx;
-    w->handler_queue = queue;
-    w->handler_interval = hz > 0 ? 1.0 / hz : 0;
-    w->handler_last = 0;
-    pthread_mutex_unlock(&w->lock);
-}
+
 
 void wabe_stop(wabe *w)
 {

@@ -27,8 +27,16 @@ void ws_stop(void);
 size_t ws_read_accel(ws_sample *out, size_t max);
 size_t ws_read_gyro(ws_sample *out, size_t max);
 
+// Nonzero once the accelerometer report layout has been confirmed against gravity. Zero means
+// samples are being parsed at the documented offsets without that confirmation.
+int ws_layout_known(void);
+
 // Lid angle in degrees at 0.01 resolution (input report 7 -- GetValue is the known trap).
 // Synchronous poll on the calling thread; returns negative on error.
 double ws_lid_deg(void);
+
+// Degrees per count of whichever lid report answered the probe: 0.01 for the fine report, 1.0
+// for the whole-degree one, 0 when the machine has no lid angle sensor.
+double ws_lid_resolution(void);
 
 #endif

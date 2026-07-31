@@ -18,14 +18,20 @@ let binDir = home.appendingPathComponent(".local/bin")
 let installedDaemon = binDir.appendingPathComponent("wabed")
 let installedCLI = binDir.appendingPathComponent("wabe")
 let logPath = home.appendingPathComponent("Library/Logs/wabe.log")
+let demoName = "tavoletta"
 
 var sockPath = "/tmp/wabe.sock"
 var raw = false
 var command = "status"
+var demoArgs: [String] = []
 var args = ArraySlice(CommandLine.arguments.dropFirst())
 while let a = args.popFirst() {
+    if command == "demo" {
+        demoArgs.append(a)  // everything after `demo` belongs to the demo
+        continue
+    }
     switch a {
-    case "watch", "recenter", "status", "install", "uninstall": command = a
+    case "watch", "recenter", "status", "install", "uninstall", "demo": command = a
     case "--sock": sockPath = args.popFirst() ?? sockPath
     case "--raw": raw = true
     case "--help", "-h":
@@ -35,6 +41,7 @@ while let a = args.popFirst() {
           wabe watch [--raw]   live pose readout
           wabe recenter        zero the relative heading
           wabe status          service state
+          wabe demo [args]     the magic window (`wabe demo --help` for its options)
           wabe install         start at login (launchd, no root)
           wabe uninstall       stop and remove
 
@@ -42,7 +49,7 @@ while let a = args.popFirst() {
         """)
         exit(0)
     default:
-        FileHandle.standardError.write(Data("unknown argument: \(a)\n".utf8))
+        FileHandle.standardError.write(Data("unknown argument: \(a) — see `wabe --help`\n".utf8))
         exit(2)
     }
 }
@@ -75,7 +82,7 @@ func connectToDaemon() -> Int32? {
 func requireDaemon() -> Int32 {
     guard let fd = connectToDaemon() else {
         FileHandle.standardError.write(Data(
-            "no daemon on \(sockPath) — run `wabe install`, or `swift run wabed` for a foreground one\n".utf8))
+            "no daemon on \(sockPath) — run `make install`, or `make && ./build/wabed`\n".utf8))
         exit(1)
     }
     return fd
@@ -88,6 +95,13 @@ struct Pose: Decodable {
     let lid: Double
     let n: [Double]
     let stat: Bool
+
+    var angles: String {
+        String(format: "roll %+7.2f°  pitch %+7.2f°  yaw %+7.2f°", rpy[0], rpy[1], rpy[2])
+    }
+    /// Machines without a hinge encoder publish a negative angle; say so once instead of
+    /// printing -1.00 forever.
+    var hinge: String { lid < 0 ? "  (no hinge encoder)" : String(format: "  lid %6.2f°", lid) }
 }
 
 /// Read newline-delimited poses, handing each to `body` until it returns false.
@@ -136,7 +150,7 @@ func doInstall() {
     let built = here.appendingPathComponent("wabed")
     guard FileManager.default.fileExists(atPath: built.path) else {
         FileHandle.standardError.write(Data(
-            "cannot find wabed next to \(here.path) — run `swift build -c release` first\n".utf8))
+            "cannot find wabed next to \(here.path) — run `make tools` first\n".utf8))
         exit(1)
     }
 
@@ -145,8 +159,17 @@ func doInstall() {
                                              withIntermediateDirectories: true)
     // Install the daemon and this control binary together — `wabe status` after `wabe install`
     // should work from anywhere, not only from the build directory.
-    for (src, dst) in [(built, installedDaemon),
-                       (here.appendingPathComponent("wabe"), installedCLI)] {
+    var toInstall = [(built, installedDaemon), (here.appendingPathComponent("wabe"), installedCLI)]
+    // Install the demo too if it has been built. Its absence is not an error: the service does
+    // not depend on it, and most people will never build it.
+    for demo in [here.appendingPathComponent(demoName),
+                 URL(fileURLWithPath: "examples/tavoletta/.build/release/" + demoName)] {
+        if FileManager.default.fileExists(atPath: demo.path) {
+            toInstall.append((demo, binDir.appendingPathComponent(demoName)))
+            break
+        }
+    }
+    for (src, dst) in toInstall {
         guard FileManager.default.fileExists(atPath: src.path) else { continue }
         try? FileManager.default.removeItem(at: dst)
         do {
@@ -215,11 +238,45 @@ func doInstall() {
     exit(1)
 }
 
+/// The demo lives in its own package so building the service never drags in SceneKit. This only
+/// finds and runs it: installed next to us, or built in place in a checkout.
+func doDemo() {
+    let here = URL(fileURLWithPath: CommandLine.arguments[0])
+        .resolvingSymlinksInPath().deletingLastPathComponent()
+    let candidates = [
+        here.appendingPathComponent(demoName),
+        binDir.appendingPathComponent(demoName),
+        URL(fileURLWithPath: "examples/tavoletta/.build/release/\(demoName)"),
+        URL(fileURLWithPath: "examples/tavoletta/.build/debug/\(demoName)"),
+    ]
+    guard let demo = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) })
+    else {
+        let hint = "the demo is not built. From a checkout: `make demo`.\n"
+        FileHandle.standardError.write(Data(hint.utf8))
+        exit(1)
+    }
+    let p = Process()
+    p.executableURL = demo
+    p.arguments = demoArgs
+    do {
+        try p.run()
+    } catch {
+        FileHandle.standardError.write(Data("cannot run \(demo.path): \(error)\n".utf8))
+        exit(1)
+    }
+    p.waitUntilExit()
+    exit(p.terminationStatus)
+}
+
 func doUninstall() {
     _ = run("/bin/launchctl", ["bootout", serviceTarget])
     try? FileManager.default.removeItem(at: plistPath)
-    try? FileManager.default.removeItem(at: installedDaemon)
-    print("wabe uninstalled (removed agent, daemon, and socket registration)")
+    // Everything install put in ~/.local/bin, including this binary. Install was leaving `wabe`
+    // and the demo behind.
+    for f in [installedDaemon, installedCLI, binDir.appendingPathComponent(demoName)] {
+        try? FileManager.default.removeItem(at: f)
+    }
+    print("wabe uninstalled: agent stopped, \(binDir.path) binaries removed")
 }
 
 func doStatus() {
@@ -227,7 +284,14 @@ func doStatus() {
     print("agent    \(loaded ? "loaded" : "not installed")  (\(LABEL))")
     guard let fd = connectToDaemon() else {
         print("socket   \(sockPath): not responding")
-        print("\nstart it with `wabe install`, or `swift run wabed` for a foreground daemon")
+        // Loaded-but-silent is a crashing daemon, not a missing install, and re-installing
+        // will not fix it.
+        if loaded {
+            print("\nthe agent is loaded but nothing is answering, so the daemon is failing to start.")
+            print("see \(logPath.path)")
+        } else {
+            print("\nstart it with `make install`, or `make && ./build/wabed` for a foreground one")
+        }
         exit(1)
     }
     var count = 0
@@ -246,8 +310,10 @@ func doStatus() {
     }
     let hz = Double(count - 1) / max(1e-6, p.t - t0)
     print("socket   \(sockPath): \(String(format: "%.0f", hz)) Hz")
-    print(String(format: "pose     roll %+.2f°  pitch %+.2f°  yaw %+.2f°  lid %.2f°  %@",
-                 p.rpy[0], p.rpy[1], p.rpy[2], p.lid, p.stat ? "at rest" : "moving"))
+    // The hinge encoder is a separate part from the IMU and some machines lack it, in which
+    // case orientation still works and the screen normal does not.
+    if p.lid < 0 { print("hinge    absent on this machine: no screen normal") }
+    print("pose     " + p.angles + p.hinge + (p.stat ? "  at rest" : "  moving"))
 }
 
 // MARK: - dispatch
@@ -259,6 +325,8 @@ case "uninstall":
     doUninstall()
 case "status":
     doStatus()
+case "demo":
+    doDemo()
 case "recenter":
     let fd = requireDaemon()
     _ = "recenter\n".withCString { send(fd, $0, 9, 0) }
@@ -269,10 +337,10 @@ case "watch":
         if raw {
             print(text)
         } else {
-            print(String(
-                format: "\u{1B}[2K\rroll %+7.2f°  pitch %+7.2f°  yaw %+7.2f°  lid %6.2f°  n [%+.3f %+.3f %+.3f] %@",
-                p.rpy[0], p.rpy[1], p.rpy[2], p.lid, p.n[0], p.n[1], p.n[2], p.stat ? "·" : "≈"),
-                terminator: "")
+            let normal = p.lid < 0 ? "" : String(format: "  n [%+.3f %+.3f %+.3f]",
+                                                 p.n[0], p.n[1], p.n[2])
+            print("\u{1B}[2K\r" + p.angles + p.hinge + normal + (p.stat ? " ·" : " ≈"),
+                  terminator: "")
             fflush(stdout)
         }
         return true

@@ -51,6 +51,7 @@ int wabe_serve(const wabe_service *cfg)
 
     int server_fd = listen_unix(sock_path);
     if (server_fd < 0) {
+        fprintf(stderr, "wabed: cannot listen on %s: %s\n", sock_path, strerror(errno));
         wabe_stop(w);
         return WABE_ERR_SOCKET;
     }

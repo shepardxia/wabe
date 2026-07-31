@@ -1,5 +1,5 @@
 // Orientation core: chip-to-base axis maps, timestamp merge, VQF (via the C shim over the
-// vendored C++), heading reference, and angle extraction. Pure computation, no I/O.
+// C++ in third_party/), heading reference, and angle extraction. Pure computation, no I/O.
 #include "internal.h"
 
 #include <math.h>
@@ -60,7 +60,7 @@ wabe *wabe_replay(double sample_hz)
     w->vqf = wvqf_create(1.0 / (sample_hz > 0 ? sample_hz : 795.0));
     w->q[0] = 1;
     w->ref[0] = 1;
-    w->lid_deg = -1;
+    wabe_lid_filter_reset(&w->lid);
     w->first = 1;
     pthread_mutex_init(&w->lock, NULL);
     return w;
@@ -112,7 +112,7 @@ void wabe_feed(wabe *w, const wabe_sample *accel, size_t na,
 void wabe_set_lid(wabe *w, double deg)
 {
     pthread_mutex_lock(&w->lock);
-    w->lid_deg = deg;
+    wabe_lid_filter_push(&w->lid, deg, wabe_now());
     pthread_mutex_unlock(&w->lock);
 }
 
@@ -141,7 +141,10 @@ void wabe_read(wabe *w, wabe_orientation *out)
     for (int i = 0; i < 3; i++)
         out->bias[i] = w->bias[i] * RAD2DEG;
     out->at_rest = w->rest;
-    out->lid_deg = w->lid_deg;
+    // Reconstructed to the moment it is being read, not held from the last hinge report. The
+    // encoder updates at ~10 Hz and everything downstream publishes far faster; see lid_filter.c.
+    const double lid = wabe_lid_filter_value(&w->lid, wabe_now());
+    out->lid_deg = lid;
 
     // Laptop-intuitive angles. Roll/pitch absolute (gravity), yaw relative to the last
     // recenter. Signs: pitch + = front edge up, roll + = right side down, yaw + = CCW from
@@ -157,8 +160,8 @@ void wabe_read(wabe *w, wabe_orientation *out)
 
     // Screen normal: base attitude ⊕ lid angle. Hinge axis = base +X; at lid angle L the
     // face normal in base frame is (0,0,1) rotated about X by (180-L) degrees.
-    if (w->lid_deg >= 0) {
-        const double theta = (180.0 - w->lid_deg) * DEG2RAD;
+    if (lid >= 0) {
+        const double theta = (180.0 - lid) * DEG2RAD;
         const double nb[3] = {0, -sin(theta), cos(theta)};
         out->n[0] = m[0][0] * nb[0] + m[0][1] * nb[1] + m[0][2] * nb[2];
         out->n[1] = m[1][0] * nb[0] + m[1][1] * nb[1] + m[1][2] * nb[2];

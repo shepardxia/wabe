@@ -1,5 +1,6 @@
-// C shim over the vendored VQF C++ implementation (Sources/CWabeVQF/vendor, MIT,
-// D. Laidig & T. Seel — "VQF: Highly Accurate IMU Orientation Estimation", Inf. Fusion 2023).
+// extern "C" wrapper over VQF (vqf.hpp), so the C core can call the C++ filter.
+// D. Laidig & T. Seel, "VQF: Highly Accurate IMU Orientation Estimation",
+// Information Fusion 2023. https://github.com/dlaidig/vqf
 #ifndef WABE_VQF_H
 #define WABE_VQF_H
 

@@ -1,0 +1,66 @@
+// The handful of things every piece of the scene needs: a material, a colour blend, a mesh, and
+// the rotation that stands a SceneKit primitive up in a Z-up world.
+//
+// These lived three times over — once in Piazza, once in Furniture, once (for colour) in Textures
+// and Overlay — because those files were written in parallel against one spec and none of them was
+// allowed to reach into the others. The copies had already drifted: two different `recess` values
+// under the same name, and the same Double-to-Float converter under two names.
+import AppKit
+import SceneKit
+import simd
+
+/// SCNCylinder, SCNCone, SCNTube and SCNPlane are all born about SceneKit's +Y. The piazza is Z-up,
+/// so every one of them carries this. A building lying on its side is the classic failure here.
+let standUp = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+
+func float3(_ v: SIMD3<Double>) -> SIMD3<Float> { SIMD3(Float(v.x), Float(v.y), Float(v.z)) }
+
+func mix(_ a: NSColor, _ b: NSColor, _ t: CGFloat) -> NSColor {
+    a.blended(withFraction: t, of: b) ?? a
+}
+
+func paint(_ color: NSColor, roughness: CGFloat, metalness: CGFloat = 0) -> SCNMaterial {
+    let m = SCNMaterial()
+    m.lightingModel = .physicallyBased
+    m.diffuse.contents = color
+    m.roughness.contents = roughness
+    m.metalness.contents = metalness
+    return m
+}
+
+func stone(_ image: NSImage, roughness: CGFloat) -> SCNMaterial {
+    let m = SCNMaterial()
+    m.lightingModel = .physicallyBased
+    m.diffuse.contents = image
+    m.diffuse.mipFilter = .linear
+    m.roughness.contents = roughness
+    m.metalness.contents = 0
+    return m
+}
+
+/// Flat-shaded polygon soup, fanned into triangles that each keep their own vertices and face
+/// normal — what stone wants: a visible break at every arris, and no shared vertices to smooth one
+/// away. Faces of any vertex count; a triangle is just the three-vertex case.
+func flatMesh(_ faces: [[SIMD3<Float>]], _ material: SCNMaterial) -> SCNGeometry {
+    var vertices: [SCNVector3] = [], normals: [SCNVector3] = [], indices: [Int32] = []
+    for face in faces where face.count >= 3 {
+        let n = simd_normalize(simd_cross(face[1] - face[0], face[2] - face[0]))
+        let base = Int32(vertices.count)
+        for v in face {
+            vertices.append(SCNVector3(CGFloat(v.x), CGFloat(v.y), CGFloat(v.z)))
+            normals.append(SCNVector3(CGFloat(n.x), CGFloat(n.y), CGFloat(n.z)))
+        }
+        for t in 1..<(face.count - 1) {
+            indices.append(contentsOf: [base, base + Int32(t), base + Int32(t + 1)])
+        }
+    }
+    let geometry = SCNGeometry(
+        sources: [SCNGeometrySource(vertices: vertices), SCNGeometrySource(normals: normals)],
+        elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)])
+    geometry.firstMaterial = material
+    return geometry
+}
+
+func flatMesh(_ faces: [[SIMD3<Double>]], _ material: SCNMaterial) -> SCNGeometry {
+    flatMesh(faces.map { $0.map(float3) }, material)
+}

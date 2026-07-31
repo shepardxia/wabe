@@ -2,7 +2,7 @@
 import PackageDescription
 
 // The service: a C library, the daemon, the control CLI, and offline replay.
-// The SceneKit demo is a separate package in examples/magic-window, so building or installing
+// The SceneKit demo is a separate package in examples/tavoletta, so building or installing
 // wabe doesn't drag in an app you didn't ask for.
 let package = Package(
     name: "wabe",

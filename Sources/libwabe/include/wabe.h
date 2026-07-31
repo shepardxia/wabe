@@ -29,6 +29,9 @@ typedef struct {
 typedef struct {
     int sensor_hz;           // 0 -> 795
     const char *record_path; // NULL -> no capture; else raw samples written as JSONL
+    // Skip the SPU wake sequence; the sensors must already be streaming. Only useful to a harness
+    // driving a machine another process has already woken.
+    int skip_wake;
 } wabe_options;
 
 enum {
@@ -38,7 +41,17 @@ enum {
     WABE_ERR_ACCEL_DEAD = 3, // accelerometer stream dead in this process; re-exec for fresh dice
     WABE_ERR_SOCKET = 4,
     WABE_ERR_RECORD = 5,
+    WABE_ERR_GYRO_DEAD = 6,  // gyroscope stream dead; the estimate cannot advance without it
+    WABE_ERR_LAYOUT = 7,     // reports arrive but no offset yields a 1 g magnitude
 };
+
+// The IMU and the hinge encoder are separate parts with separate model coverage: a 13-inch Pro
+// has no hinge encoder, so it yields orientation but no screen normal. The IMU is not in here
+// because wabe_start() fails outright without it; this is what can be absent while the rest
+// still works.
+typedef struct {
+    double lid_resolution;  // degrees per count of the hinge encoder; 0 when the machine has none
+} wabe_caps;
 
 typedef struct wabe wabe;
 
@@ -46,14 +59,12 @@ typedef struct wabe wabe;
 // Returns NULL on failure, writing a WABE_ERR_* to err if err is non-NULL.
 wabe *wabe_start(const wabe_options *cfg, int *err);
 
+// What this machine turned out to have. Zeroed for handles from wabe_replay(), which read a
+
 // Latest orientation. Safe from any thread while tracking runs. Pull it when you need it: a
 // renderer wants the newest value at vsync, not a backlog.
 void wabe_read(wabe *w, wabe_orientation *out);
 
-// Push instead: handler runs on `queue` (NULL means the tracking thread, where blocking stalls
-// sensor reads) at up to `hz` (<= 0 for every batch). handler = NULL stops delivery.
-void wabe_on_update(wabe *w, double hz, dispatch_queue_t queue,
-                    void (*handler)(const wabe_orientation *o, void *ctx), void *ctx);
 
 // Make the current heading the zero of this handle's relative yaw.
 void wabe_recenter(wabe *w);

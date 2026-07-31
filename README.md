@@ -1,72 +1,74 @@
 # wabe
 
-**An orientation service for Apple Silicon MacBooks, including where the screen faces.**
+**A service that tracks which way your MacBook's screen is facing.**
 
 <!-- DEMO GIF -->
 
-A phone is one rigid body. A laptop is two on a hinge, and the hinge angle is readable to 0.01°.
-Compose base attitude with lid angle and you get the orientation of the *display plane*: where
-the **screen** points. Underneath are the undocumented SPU
-sensors (Bosch BMI286, 795 Hz) and the lid encoder, read straight from userspace HID.
+The lid angle is readable to 0.01°. Compose it with the chassis attitude and you get the
+orientation of the display plane: where the screen points, not where the base sits. Underneath
+are the undocumented SPU sensors (Bosch BMI286, 795 Hz) and the lid encoder, read from userspace
+HID, with [VQF](https://github.com/dlaidig/vqf) turning accelerometer and gyroscope into orientation.
+
+macOS 13+ on an Apple Silicon MacBook, MIT. It all runs as your own user; `sudo` is never needed.
 
 ## Install
 
 ```bash
-swift build -c release
-.build/release/wabe install    # launchd agent, starts at login, runs as you
+make            # library and daemon: C, no Swift toolchain needed
+make install    # launchd agent, starts at login, runs as you
 ```
 
-`wabe status` shows what it sees, `wabe watch` streams a live readout, `wabe uninstall` reverses
-all of it.
+`./build/wabed` runs it in the foreground if you would rather not install anything. `make install`
+puts `wabe` and `wabed` in `~/.local/bin` and adds the control CLI: `wabe status`, `wabe watch`,
+`wabe recenter`, `wabe uninstall`.
 
 ## Demo
 
 ```bash
-swift run --package-path examples/magic-window   # m: mode · r: recenter · q: quit
+make demo       # m: mode · l: lines · r: recenter · [ ]: eye · q: quit  (--help for the rest)
 ```
 
-Pick the laptop up and turn it: the screen becomes a window onto a room that stays put. It lives
-in its own package, so the service builds on its own.
+Brunelleschi's 1425 panel, run off the hinge: Piazza del Duomo is pinned to the room and the
+screen is the picture plane. The horizon and vanishing point drawn on it are read back off the
+projection, so they measure the screen normal rather than illustrate it.
 
 ## Usage
 
 `wabed` publishes newline JSON on `/tmp/wabe.sock`. Write `recenter\n` to zero your heading, or
-`rate 60\n` to pick your update rate. Each connection keeps its own heading zero and its own
-rate, so clients stay independent.
+`rate 60\n` to set your update rate (30 Hz default, 200 Hz cap). Each connection keeps its own.
 
 ```json
-{"q":[0.9997,-0.0237,0.0009,0.0000], "rpy":[0.109,2.718,-0.000], "lid":108.54,
- "n":[0.0007,-0.9320,0.3626], "bias":[0.153,0.001,0.000], "stat":true}
+{"t":1785423645.5060, "q":[0.9997,-0.0237,0.0009,0.0000], "rpy":[0.109,2.718,-0.000],
+ "lid":108.54, "n":[0.0007,-0.9320,0.3626], "bias":[0.153,0.001,0.000], "stat":true}
 ```
 
-`q` is base to world (X right, Y toward hinge, Z up). **`n` is the screen normal in world
-frame**, the field the project exists for. In `rpy`, roll and pitch are absolute, measured
-against gravity. Yaw is relative to your last `recenter`, since a magnetometer is the part that
-would make it a compass heading and Macs leave it out.
+- `t` seconds since the epoch
+- `q` base to world rotation, `[w,x,y,z]`, in a frame with X right, Y toward the hinge, Z up
+- `rpy` degrees; roll and pitch absolute against gravity, yaw relative to your last `recenter`
+- `lid` hinge angle in degrees, or -1 on a machine with no hinge encoder
+- **`n` screen normal in world frame**, zero whenever `lid` is -1
+- `bias` gyroscope bias estimate, deg/s per axis
+- `stat` true while the filter reads the machine as stationary
 
 Or link the C library and skip the socket:
 
 ```c
 wabe *w = wabe_start(NULL, NULL);   // opens the sensors, tracks in the background
-
-wabe_orientation o;                 // pull: newest value, any thread
-wabe_read(w, &o);                   // o.q, o.rpy, o.n, o.at_rest
-
-wabe_on_update(w, 60, queue, handler, ctx);   // or push, on a queue you choose
+wabe_orientation o;
+wabe_read(w, &o);                   // pull: newest value, any thread
+                                    // o.q, o.rpy, o.n, o.lid_deg, o.at_rest
+wabe_recenter(w);                             // zero the heading
 wabe_stop(w);
 ```
 
-`wabe_serve()` is that plus the socket, and `wabe_replay()` is the same tracker fed from a file.
-Full API in [`Sources/libwabe/include/wabe.h`](Sources/libwabe/include/wabe.h).
+`wabe_serve()` is that plus the socket.
+`wabe_replay()` replays recordings via `wabe_feed()`. See [`wabe.h`](Sources/libwabe/include/wabe.h).
 
 ## Replay
 
-[VQF](https://github.com/dlaidig/vqf) turns the accelerometer and gyroscope readings into
-orientation. Vendored, MIT.
-
-`wabed --record` writes raw samples, and `wabe-replay` runs them back through the same code the
-live daemon uses. Sessions are recorded with one laptop edge flush against a straightedge at
-start and finish, so the true heading is known and drift comes out as a measurement:
+`wabed --record` writes raw samples and `wabe-replay` runs them back through the live code path.
+`probes/session.py` records your own: 45 seconds by default, `--full` for the calibration
+protocol. Both rest a laptop edge on a straightedge at each end, so drift is measured, not guessed:
 
 ```bash
 curl -L -o session.jsonl.gz \
@@ -74,14 +76,23 @@ curl -L -o session.jsonl.gz \
 swift run wabe-replay session.jsonl.gz
 ```
 
-Measurements and the sensor reverse engineering: [NOTES.md](NOTES.md).
+## Hardware
+
+Verified on one machine, a 14-inch M4 Pro; coverage below is secondhand, from other projects'
+reports. Report offsets and the lid access path are discovered at startup, never hardcoded.
+
+- IMU: MacBooks, M2 and later.
+- Hinge encoder: 14- and 16-inch Pro, 15-inch Air, 13-inch Air from M2. The 13-inch Pro has none.
+  Orientation still works without it: `lid` reads -1 and `n` stays zero, which is how you tell.
+
+Yaw is relative to your last `recenter` rather than a compass heading, these Macs carrying no
+magnetometer. At full rate the pipeline draws about 76 mW, near 1% of a charge across a working
+day. Measurements and the sensor reverse engineering: [NOTES.md](NOTES.md).
 
 ## Credits
 
 - [samhenrigold](https://github.com/samhenrigold/LidAngleSensor) reverse engineered the lid sensor
 - [olvvier](https://github.com/olvvier/apple-silicon-accelerometer) found the IMU and its wire format
-- [taigrr](https://github.com/taigrr/apple-silicon-accelerometer) ported it to Go. The driver
-  wake sequence came from there
+- [taigrr](https://github.com/taigrr/apple-silicon-accelerometer)'s Go port carried the wake sequence
+- [tcsenpai](https://github.com/tcsenpai/pybooklid) documented the feature-report path to the lid
 - [dlaidig](https://github.com/dlaidig/vqf) wrote VQF
-
-Apple Silicon MacBook, macOS 13+. Verified on an M4 Pro. MIT.

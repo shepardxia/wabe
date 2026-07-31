@@ -3,10 +3,23 @@
 #define WABE_INTERNAL_H
 
 #include "include/wabe.h"
-#include "vendor/wabe_vqf.h"
+#include "third_party/wabe_vqf.h"
 
 #include <pthread.h>
 #include <stdio.h>
+
+/// Reconstructs the lid angle between hinge samples; see lid_filter.c for why it has to.
+typedef struct {
+    double x, v;      // angle (deg) and rate (deg/s), the tracker's state
+    double t;         // time of the last correction
+    double y, ty;     // output stage and its clock
+    double last_raw;  // last reading accepted, to tell a fresh sample from a repeated poll
+    int primed;
+} wabe_lid_filter;
+
+void wabe_lid_filter_reset(wabe_lid_filter *f);
+void wabe_lid_filter_push(wabe_lid_filter *f, double deg, double now);
+double wabe_lid_filter_value(wabe_lid_filter *f, double now);
 
 struct wabe {
     wvqf *vqf;
@@ -16,9 +29,11 @@ struct wabe {
     int rest;
     double last_accel[3]; // base frame, g (zero-order hold)
     int have_accel;
-    double lid_deg;
+    wabe_lid_filter lid;
     double last_t;
     int first;
+
+    wabe_caps caps;
 
     // Live mode only: a thread drains the sensors into the estimate above.
     pthread_mutex_t lock;
@@ -26,12 +41,6 @@ struct wabe {
     int tracking;
     FILE *recorder;
 
-    // Push delivery (wabe_on_update).
-    void (*handler)(const wabe_orientation *, void *);
-    void *handler_ctx;
-    dispatch_queue_t handler_queue;
-    double handler_interval;
-    double handler_last;
 };
 
 double wabe_now(void);
