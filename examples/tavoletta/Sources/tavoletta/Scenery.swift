@@ -28,6 +28,18 @@ func paint(_ color: NSColor, roughness: CGFloat, metalness: CGFloat = 0) -> SCNM
     return m
 }
 
+/// An axis-aligned block: `size` is its full extent in x, y and z, `spin` an optional rotation
+/// about the vertical. Cornices, plinths, string courses, kerbs and roofs are all this.
+func slab(at p: SIMD3<Double>, size: SIMD3<Double>, _ material: SCNMaterial,
+          spin: simd_quatf? = nil) -> SCNNode {
+    let box = SCNBox(width: size.x, height: size.y, length: size.z, chamferRadius: 0)
+    box.firstMaterial = material
+    let node = SCNNode(geometry: box)
+    node.simdPosition = float3(p)
+    if let spin { node.simdOrientation = spin }
+    return node
+}
+
 func stone(_ image: NSImage, roughness: CGFloat) -> SCNMaterial {
     let m = SCNMaterial()
     m.lightingModel = .physicallyBased

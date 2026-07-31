@@ -112,9 +112,6 @@ struct Frustum {
 
     func toCamera(_ world: SIMD3<Double>) -> SIMD3<Double> { basis.transpose * world }
 
-    /// Image of a world point.
-    func ndc(point p: SIMD3<Double>) -> SIMD2<Double>? { project(cameraRay: toCamera(p - eye)) }
-
     /// Image of a world direction: the vanishing point of every line parallel to it.
     func ndc(direction d: SIMD3<Double>) -> SIMD2<Double>? { project(cameraRay: toCamera(d)) }
 

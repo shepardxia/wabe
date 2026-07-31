@@ -60,11 +60,7 @@ enum Furniture {
         let torusH = 0.028 * h
         let moulding = SCNCylinder(radius: shaftR * 1.45, height: torusH)
         moulding.radialSegmentCount = 16
-        moulding.firstMaterial = granite
-        let mouldingNode = SCNNode(geometry: moulding)
-        mouldingNode.simdPosition = SIMD3(0, 0, Float(z + torusH / 2))
-        mouldingNode.simdOrientation = standUp
-        group.addChildNode(mouldingNode)
+        group.addChildNode(upright(moulding, z: z + torusH / 2, granite))
         z += torusH
 
         let shaft = SCNNode(geometry: flutedShaft(height: capTop - capH - z,
@@ -78,11 +74,7 @@ enum Furniture {
         let echinusH = capH * 0.6
         let echinus = SCNCone(topRadius: shaftR * 1.5, bottomRadius: shaftR * 0.88, height: echinusH)
         echinus.radialSegmentCount = 24
-        echinus.firstMaterial = granite
-        let echinusNode = SCNNode(geometry: echinus)
-        echinusNode.simdPosition = SIMD3(0, 0, Float(capTop - capH + echinusH / 2))
-        echinusNode.simdOrientation = standUp
-        group.addChildNode(echinusNode)
+        group.addChildNode(upright(echinus, z: capTop - capH + echinusH / 2, granite))
 
         group.addChildNode(block(side: shaftR * 3.0, from: capTop - capH + echinusH, to: capTop,
                                  granite))
@@ -147,29 +139,18 @@ enum Furniture {
         // would be right only from directly above, and this is seen from 1.6 m off the ground.
         let kerb = SCNTube(innerRadius: 0.58, outerRadius: circumradius, height: 0.80)
         kerb.radialSegmentCount = 8
-        kerb.firstMaterial = marble
-        let kerbNode = SCNNode(geometry: kerb)
-        kerbNode.simdPosition = SIMD3(0, 0, 0.40)
-        kerbNode.simdOrientation = standUp
-        group.addChildNode(kerbNode)
+        group.addChildNode(upright(kerb, z: 0.40, marble))
 
         let coping = SCNTube(innerRadius: 0.56, outerRadius: circumradius + 0.07, height: 0.10)
         coping.radialSegmentCount = 8
-        coping.firstMaterial = paint(Tex.Palette.carrara, roughness: 0.55)
-        let copingNode = SCNNode(geometry: coping)
-        copingNode.simdPosition = SIMD3(0, 0, 0.85)
-        copingNode.simdOrientation = standUp
-        group.addChildNode(copingNode)
+        group.addChildNode(upright(coping, z: 0.85, paint(Tex.Palette.carrara, roughness: 0.55)))
 
         // Plugs the tube 0.4 m below the rim so the opening reads as depth rather than as a
         // window through the piece.
         let shaftFloor = SCNCylinder(radius: 0.575, height: 0.50)
         shaftFloor.radialSegmentCount = 8
-        shaftFloor.firstMaterial = paint(Tex.Palette.wellShaft, roughness: 0.95)
-        let shaftNode = SCNNode(geometry: shaftFloor)
-        shaftNode.simdPosition = SIMD3(0, 0, 0.25)
-        shaftNode.simdOrientation = standUp
-        group.addChildNode(shaftNode)
+        group.addChildNode(upright(shaftFloor, z: 0.25,
+                                   paint(Tex.Palette.wellShaft, roughness: 0.95)))
 
         // Semicircular arch on two short uprights socketed into the coping.
         let spring = 1.15, archR = 0.80, segments = 8
@@ -202,11 +183,7 @@ enum Furniture {
 
         let bucket = SCNCylinder(radius: 0.13, height: 0.26)
         bucket.radialSegmentCount = 12
-        bucket.firstMaterial = iron
-        let bucketNode = SCNNode(geometry: bucket)
-        bucketNode.simdPosition = SIMD3(0, 0, 1.18)
-        bucketNode.simdOrientation = standUp
-        group.addChildNode(bucketNode)
+        group.addChildNode(upright(bucket, z: 1.18, iron))
         return group
     }
 
@@ -280,14 +257,22 @@ enum Furniture {
     /// SCNCylinder, SCNCone, SCNTube and SCNPlane are born about SceneKit's +Y. This puts their
     /// axis on the piazza's +Z.
 
+    /// Stands a Y-born primitive on the piazza's +Z and centres it at height `z` on the axis.
+    /// SCNCylinder, SCNCone and SCNTube all need this; the pulley deliberately does not, because
+    /// its axis is horizontal.
+    private static func upright(_ geometry: SCNGeometry, z: Double,
+                                _ material: SCNMaterial) -> SCNNode {
+        geometry.firstMaterial = material
+        let node = SCNNode(geometry: geometry)
+        node.simdPosition = SIMD3(0, 0, Float(z))
+        node.simdOrientation = standUp
+        return node
+    }
+
     /// A square block spanning `from`...`to` in z, centred on the origin in plan.
     private static func block(side: Double, from z0: Double, to z1: Double,
                               _ material: SCNMaterial) -> SCNNode {
-        let box = SCNBox(width: side, height: side, length: z1 - z0, chamferRadius: 0)
-        box.firstMaterial = material
-        let node = SCNNode(geometry: box)
-        node.simdPosition = SIMD3(0, 0, Float((z0 + z1) / 2))
-        return node
+        slab(at: SIMD3(0, 0, (z0 + z1) / 2), size: SIMD3(side, side, z1 - z0), material)
     }
 
     /// A cylinder running from `a` to `b`: everything in this file that is a line rather than a

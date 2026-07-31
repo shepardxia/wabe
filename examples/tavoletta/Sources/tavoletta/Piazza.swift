@@ -562,18 +562,6 @@ enum Piazza {
         return node
     }
 
-    /// An axis-aligned block: `size` is its full extent in x, y and z, `spin` an optional rotation
-    /// about the vertical. Cornices, plinths, string courses and roofs are all this.
-    private static func slab(at p: SIMD3<Double>, size: SIMD3<Double>, _ material: SCNMaterial,
-                             spin: simd_quatf? = nil) -> SCNNode {
-        let box = SCNBox(width: size.x, height: size.y, length: size.z, chamferRadius: 0)
-        box.firstMaterial = material
-        let node = SCNNode(geometry: box)
-        node.simdPosition = float3(p)
-        if let spin { node.simdOrientation = spin }
-        return node
-    }
-
     /// The one definition of "which way is out": the horizontal unit normal at compass angle
     /// `azimuth`, where 0 points -Y, back toward the viewing station. Every wall in this file is
     /// placed by an azimuth and this function, so a facade and the cornice over it cannot disagree.
