@@ -685,23 +685,27 @@ private let skyStops: [(CGFloat, NSColor)] = [
     (1.00, mix(Tex.Palette.skyHorizon, Tex.Palette.ground, 0.60)),
 ]
 
+/// The stops with their components already in sRGB. `skyColor` is called once per texel of every
+/// cube face, and the cube is built twice, so converting the colour space inside it meant about
+/// 1.6 million conversions of these same four values: 85% of the scene's entire build time.
+private let skyRamp: [(CGFloat, (CGFloat, CGFloat, CGFloat))] = skyStops.map { stop in
+    let c = stop.1.usingColorSpace(.sRGB) ?? stop.1
+    return (stop.0, (c.redComponent, c.greenComponent, c.blueComponent))
+}
+
 private func skyColor(at position: CGFloat) -> (UInt8, UInt8, UInt8) {
     let t = min(max(position, 0), 1)
-    var lo = skyStops[0], hi = skyStops[skyStops.count - 1]
-    for i in 1..<skyStops.count where skyStops[i].0 >= t {
-        lo = skyStops[i - 1]
-        hi = skyStops[i]
+    var lo = skyRamp[0], hi = skyRamp[skyRamp.count - 1]
+    for i in 1..<skyRamp.count where skyRamp[i].0 >= t {
+        lo = skyRamp[i - 1]
+        hi = skyRamp[i]
         break
     }
     let f = (t - lo.0) / max(1e-6, hi.0 - lo.0)
-    let a = lo.1.usingColorSpace(.sRGB) ?? lo.1
-    let b = hi.1.usingColorSpace(.sRGB) ?? hi.1
     func channel(_ x: CGFloat, _ y: CGFloat) -> UInt8 {
         UInt8(max(0, min(255, (x + (y - x) * f) * 255)))
     }
-    return (channel(a.redComponent, b.redComponent),
-            channel(a.greenComponent, b.greenComponent),
-            channel(a.blueComponent, b.blueComponent))
+    return (channel(lo.1.0, hi.1.0), channel(lo.1.1, hi.1.1), channel(lo.1.2, hi.1.2))
 }
 
 

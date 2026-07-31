@@ -4,11 +4,7 @@
 
 <!-- DEMO GIF -->
 
-Attitude comes from the SPU IMU (Bosch BMI286, 795 Hz) through [VQF](https://github.com/dlaidig/vqf);
-the hinge reads to 0.01°. Compose them and you have the display plane, which is not the base the
-laptop is sitting on, and is the one thing nothing else on the machine reports. Userspace HID.
-
-macOS 13+ on an Apple Silicon MacBook. Runs as your own user; `sudo` is never needed.
+macOS 13+ on an Apple Silicon MacBook. No root.
 
 ## Install
 
@@ -24,12 +20,12 @@ puts `wabe` and `wabed` in `~/.local/bin` and adds the control CLI: `wabe status
 ## Demo
 
 ```bash
-make demo       # m: mode · l: lines · r: recenter · [ ]: eye · q: quit  (--help for the rest)
+make demo       # l: lines · r: recenter · [ ]: eye distance · q: quit
 ```
 
-Brunelleschi's 1425 panel, run off the hinge: Piazza del Duomo is pinned to the room and the
-screen is the picture plane. The horizon and vanishing point drawn on it are read back off the
-projection, so they measure the screen normal rather than illustrate it.
+Your screen as a mirror of Piazza del Duomo, after Brunelleschi's 1425 demonstration. Turn a
+mirror one degree and the reflected ray turns two, so the piazza sweeps at twice the rate the lid
+moves.
 
 ## Usage
 
@@ -67,7 +63,8 @@ wabe_stop(w);
 
 `wabed --record` writes raw samples and `wabe-replay` runs them back through the live code path.
 `probes/session.py` records your own: 45 seconds by default, `--full` for the calibration
-protocol. Both rest a laptop edge on a straightedge at each end, so drift is measured, not guessed:
+protocol. Both rest a laptop edge on a straightedge at each end, so the drift is against a known
+angle:
 
 ```bash
 curl -L -o session.jsonl.gz \
@@ -77,16 +74,15 @@ swift run wabe-replay session.jsonl.gz
 
 ## Hardware
 
-Verified on one machine, a 14-inch M4 Pro; coverage below is secondhand, from other projects'
-reports. Report offsets and the lid access path are discovered at startup, never hardcoded.
+Verified on one machine, a 14-inch M4 Pro. The rest is secondhand, from other projects' reports.
 
 - IMU: MacBooks, M2 and later.
 - Hinge encoder: 14- and 16-inch Pro, 15-inch Air, 13-inch Air from M2. The 13-inch Pro has none.
   Orientation still works without it: `lid` reads -1 and `n` stays zero, which is how you tell.
 
-Yaw is relative to your last `recenter` rather than a compass heading, these Macs carrying no
-magnetometer. At full rate the pipeline draws about 76 mW, near 1% of a charge across a working
-day. Measurements and the sensor reverse engineering: [NOTES.md](NOTES.md).
+These Macs carry no magnetometer, so yaw is relative to your last `recenter`, not a compass
+heading. At full rate the pipeline draws about 76 mW. Measurements and the sensor reverse
+engineering: [NOTES.md](NOTES.md).
 
 ## Credits
 
@@ -94,4 +90,4 @@ day. Measurements and the sensor reverse engineering: [NOTES.md](NOTES.md).
 - [olvvier](https://github.com/olvvier/apple-silicon-accelerometer) found the IMU and its wire format
 - [taigrr](https://github.com/taigrr/apple-silicon-accelerometer)'s Go port carried the wake sequence
 - [tcsenpai](https://github.com/tcsenpai/pybooklid) documented the feature-report path to the lid
-- [dlaidig](https://github.com/dlaidig/vqf) wrote VQF
+- [Laidig and Seel](https://github.com/dlaidig/vqf) designed VQF (*Information Fusion*, 2023)

@@ -22,6 +22,7 @@ private let carraraHex: UInt32 = 0xF2_ED_E0
 private let inkHex: UInt32 = 0x3A_31_28
 private let holeHex: UInt32 = 0x1E_18_11
 private let glareHex: UInt32 = 0xFF_F4_D8  // sunlight off glass
+private let deviceRGB = CGColorSpaceCreateDeviceRGB()
 
 private func rgb(_ hex: UInt32, _ alpha: Double = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
@@ -99,7 +100,7 @@ private func drawGlare(_ c: Construction, _ ctx: CGContext, _ size: CGSize) {
     // big the window happens to be.
     let r = min(size.width, size.height) * 0.42
     let core = pow(c.glintStrength, 40)
-    guard let bloom = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+    guard let bloom = CGGradient(colorsSpace: deviceRGB,
                                  colors: [rgb(glareHex, 0.60 * core + 0.05),
                                           rgb(glareHex, 0.20 * core + 0.02),
                                           rgb(glareHex, 0)] as CFArray,

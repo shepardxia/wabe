@@ -83,10 +83,11 @@ enum Piazza {
         buildSun(into: world)
 
         // The mirror reflects the world with a transform of determinant -1, which reverses every
-        // triangle's winding. Without this, back-face culling throws away exactly the faces that
-        // should be visible and the reflection renders inside out.
+        // triangle's winding, so the default culling would throw away exactly the faces that
+        // should be visible. Cull the other side rather than culling nothing: `isDoubleSided`
+        // also renders correctly but rasterises every back face too, for about 12% of the frame.
         scene.rootNode.enumerateHierarchy { node, _ in
-            node.geometry?.materials.forEach { $0.isDoubleSided = true }
+            node.geometry?.materials.forEach { $0.cullMode = .front }
         }
 
         return (scene, world)
@@ -504,7 +505,7 @@ enum Piazza {
         sun.color = NSColor(srgbRed: 1.0, green: 0.965, blue: 0.885, alpha: 1)
         sun.intensity = 1500
         sun.castsShadow = true
-        sun.shadowMapSize = CGSize(width: 4096, height: 4096)
+        sun.shadowMapSize = CGSize(width: 2048, height: 2048)
         sun.shadowSampleCount = 16
         sun.shadowRadius = 2
         // Nearly opaque, and measured rather than guessed: with the ambient and the sky fill both
