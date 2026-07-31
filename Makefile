@@ -61,10 +61,11 @@ $(BUILD)/%.o: %.cpp
 tools:
 	swift build -c release
 
-$(DEMO_BIN):
+# Phony, and the build runs every time: SwiftPM already tracks its own sources, and a file rule on
+# the binary would shadow that tracking with make's own — which, having no prerequisites it can
+# see, would call an edited demo up to date and run the stale binary.
+demo:
 	swift build -c release --package-path $(DEMO_PKG)
-
-demo: $(DEMO_BIN)
 	$(DEMO_BIN)
 
 install: tools $(BUILD)/wabed
