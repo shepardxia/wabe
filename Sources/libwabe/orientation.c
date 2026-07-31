@@ -62,8 +62,19 @@ wabe *wabe_replay(double sample_hz)
     w->ref[0] = 1;
     wabe_lid_filter_reset(&w->lid);
     w->first = 1;
+    w->replay = 1;
     pthread_mutex_init(&w->lock, NULL);
     return w;
+}
+
+// The handle's own present, in whichever clock its samples carry. The lid filter reconstructs
+// against elapsed time, so a replay must run on the recording's clock: a capture fed in as fast as
+// it parses would otherwise show the hinge a few minutes of travel inside a couple of seconds.
+// Both are CLOCK_MONOTONIC seconds — the recording's from some other boot — so the lid filter,
+// which only ever takes differences, cannot tell them apart and does not need to.
+static double wabe_clock(const wabe *w)
+{
+    return w->replay ? w->last_t : wabe_now();
 }
 
 static void advance(wabe *w, const double gyro_chip[3])
@@ -112,7 +123,7 @@ void wabe_feed(wabe *w, const wabe_sample *accel, size_t na,
 void wabe_set_lid(wabe *w, double deg)
 {
     pthread_mutex_lock(&w->lock);
-    wabe_lid_filter_push(&w->lid, deg, wabe_now());
+    wabe_lid_filter_push(&w->lid, deg, wabe_clock(w));
     pthread_mutex_unlock(&w->lock);
 }
 
@@ -143,7 +154,7 @@ void wabe_read(wabe *w, wabe_orientation *out)
     out->at_rest = w->rest;
     // Reconstructed to the moment it is being read, not held from the last hinge report. The
     // encoder updates at ~10 Hz and everything downstream publishes far faster; see lid_filter.c.
-    const double lid = wabe_lid_filter_value(&w->lid, wabe_now());
+    const double lid = wabe_lid_filter_value(&w->lid, wabe_clock(w));
     out->lid_deg = lid;
 
     // Laptop-intuitive angles. Roll/pitch absolute (gravity), yaw relative to the last

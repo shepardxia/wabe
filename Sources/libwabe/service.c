@@ -69,7 +69,10 @@ int wabe_serve(const wabe_service *cfg)
     int nclients = 0;
 
     for (;;) {
+        // Two clocks on purpose: the publish grid is an interval and rides the monotonic one, the
+        // published t is a date and rides the wall.
         const double now = wabe_now();
+        const double wall = wabe_wall_now();
         wabe_orientation o;
         wabe_read(w, &o);
 
@@ -88,7 +91,7 @@ int wabe_serve(const wabe_service *cfg)
             int len = snprintf(line, sizeof(line),
                 "{\"t\":%.4f,\"q\":[%.6f,%.6f,%.6f,%.6f],\"rpy\":[%.3f,%.3f,%.3f],"
                 "\"lid\":%.2f,\"n\":[%.4f,%.4f,%.4f],\"bias\":[%.5f,%.5f,%.5f],\"stat\":%s}\n",
-                now, o.q[0], o.q[1], o.q[2], o.q[3],
+                wall, o.q[0], o.q[1], o.q[2], o.q[3],
                 o.rpy[0], o.rpy[1], wabe_relative_yaw(o.q, clients[i].ref), o.lid_deg,
                 o.n[0], o.n[1], o.n[2], o.bias[0], o.bias[1], o.bias[2],
                 o.at_rest ? "true" : "false");

@@ -132,6 +132,12 @@ applied — scale is not the limiting term.
 - The publish deadline must advance on a fixed grid (`last_pub += interval`). Resetting it to the
   current time folds each cycle's overshoot into the next period, which cost ~4 Hz at a nominal
   30. Resync to now only when a full period behind.
+- HID sample timestamps are `CLOCK_MONOTONIC`, so every interval the library measures is too: the
+  lid filter's reconstruction, the publish grid, and every `t` in a recording. Wall time appears
+  in exactly two places, both of which mean a date rather than a duration — the `t` the socket
+  publishes and a capture's `meta.start`. A recorder that mixes them produces a capture whose
+  streams cannot be aligned by anyone reading it; measured here, the two clocks held a constant
+  offset to 0.78 ms over 253 s, which is what makes a mis-stamped capture recoverable at all.
 
 ## Hardware coverage
 

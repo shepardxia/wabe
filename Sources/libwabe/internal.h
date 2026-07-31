@@ -39,6 +39,9 @@ struct wabe {
     /// Degrees per count of the hinge encoder; 0 on a machine with none. Zero for replay handles,
     /// which never touch a sensor.
     double lid_resolution;
+    /// Set on handles fed from a recording. Everything timed against the clock the samples carry
+    /// rather than the wall clock reads this; see wabe_clock() in orientation.c.
+    int replay;
 
     // Live mode only: a thread drains the sensors into the estimate above.
     pthread_mutex_t lock;
@@ -47,6 +50,13 @@ struct wabe {
     FILE *recorder;
 };
 
+/// The clock everything internal is timed on: CLOCK_MONOTONIC, the same base ws_sample.t carries.
+/// Intervals measured against it — the lid filter's reconstruction, the daemon's publish grid —
+/// survive an NTP step, and a recording stamped with it stays alignable against its own samples.
 double wabe_now(void);
+
+/// Wall time, for the two places that mean a date rather than an interval: the timestamp the
+/// daemon publishes and the start marker in a recording. Never for measuring an elapsed anything.
+double wabe_wall_now(void);
 
 #endif

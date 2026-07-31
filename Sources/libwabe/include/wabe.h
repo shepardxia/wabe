@@ -104,6 +104,10 @@ void wabe_feed(wabe *w, const wabe_sample *accel, size_t n_accel,
                const wabe_sample *gyro, size_t n_gyro);
 
 // Hinge angle in degrees. Only the screen normal needs it; wabe_start() polls it for you.
+//
+// The reading is stamped at the handle's present, which on a replay handle is the timestamp of the
+// last sample fed. Feed up to a recorded hinge reading's moment before pushing it, or the
+// reconstruction dates it wrong.
 void wabe_set_lid(wabe *w, double deg);
 
 #ifdef __cplusplus

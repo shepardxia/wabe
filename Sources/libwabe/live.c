@@ -20,6 +20,11 @@
 
 double wabe_now(void)
 {
+    return (double)clock_gettime_nsec_np(CLOCK_MONOTONIC) / 1e9;
+}
+
+double wabe_wall_now(void)
+{
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
@@ -139,7 +144,10 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
             return NULL;
         }
         setvbuf(w->recorder, NULL, _IOFBF, 1 << 16);
-        fprintf(w->recorder, "{\"s\":\"meta\",\"rate\":%d,\"start\":%.6f}\n", sensor_hz, wabe_now());
+        // start is wall time, the only date in a capture; every per-record t below is the sample
+        // clock, so a reader can align the streams against each other without it.
+        fprintf(w->recorder, "{\"s\":\"meta\",\"rate\":%d,\"start\":%.6f}\n", sensor_hz,
+                wabe_wall_now());
     }
 
     w->lid_resolution = ws_lid_resolution();
