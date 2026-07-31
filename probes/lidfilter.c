@@ -9,7 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 
-#define T 0.1005      // measured hinge sample period
+#define T WABE_LID_PERIOD  // the filter's own constant, so this cannot drift from what it guards
 #define PUB (1.0 / 120)
 #define SPAN 3.2
 

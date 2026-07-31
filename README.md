@@ -14,7 +14,7 @@ make install    # launchd agent, starts at login, runs as you
 ```
 
 `./build/wabed` runs it in the foreground if you would rather not install anything. `make install`
-puts `wabe` and `wabed` in `~/.local/bin` and adds the control CLI: `wabe status`, `wabe watch`,
+puts the daemon and the control CLI in `~/.local/bin`: `wabe status`, `wabe watch`,
 `wabe recenter`, `wabe uninstall`.
 
 ## Demo

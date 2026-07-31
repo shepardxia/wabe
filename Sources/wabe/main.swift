@@ -9,6 +9,8 @@ import Foundation
 //   wabe install           install + start the launchd agent (per-user, no root)
 //   wabe uninstall         stop + remove it
 //
+// The demo is not here: it is a separate package, run from a checkout with `make demo`.
+//
 // Global: --sock <path> (default /tmp/wabe.sock)
 
 let LABEL = "dev.wabe.wabed"
@@ -18,21 +20,17 @@ let binDir = home.appendingPathComponent(".local/bin")
 let installedDaemon = binDir.appendingPathComponent("wabed")
 let installedCLI = binDir.appendingPathComponent("wabe")
 let logPath = home.appendingPathComponent("Library/Logs/wabe.log")
-let demoName = "tavoletta"
 
 var sockPath = "/tmp/wabe.sock"
 var raw = false
 var command = "status"
-var demoArgs: [String] = []
+var daemonPath: String?
 var args = ArraySlice(CommandLine.arguments.dropFirst())
 while let a = args.popFirst() {
-    if command == "demo" {
-        demoArgs.append(a)  // everything after `demo` belongs to the demo
-        continue
-    }
     switch a {
-    case "watch", "recenter", "status", "install", "uninstall", "demo": command = a
+    case "watch", "recenter", "status", "install", "uninstall": command = a
     case "--sock": sockPath = args.popFirst() ?? sockPath
+    case "--daemon": daemonPath = args.popFirst()
     case "--raw": raw = true
     case "--help", "-h":
         print("""
@@ -41,11 +39,11 @@ while let a = args.popFirst() {
           wabe watch [--raw]   live pose readout
           wabe recenter        zero the relative heading
           wabe status          service state
-          wabe demo [args]     the magic window (`wabe demo --help` for its options)
           wabe install         start at login (launchd, no root)
           wabe uninstall       stop and remove
 
-        options: --sock <path>   (default /tmp/wabe.sock)
+        options: --sock <path>     (default /tmp/wabe.sock)
+                 --daemon <path>   wabed to install (default: the one beside this binary)
         """)
         exit(0)
     default:
@@ -108,6 +106,7 @@ struct Pose: Decodable {
 func streamPoses(_ fd: Int32, _ body: (Pose, String) -> Bool) {
     var buf = Data()
     var chunk = [UInt8](repeating: 0, count: 4096)
+    var warnedUndecodable = false
     while true {
         let n = read(fd, &chunk, chunk.count)
         if n <= 0 { return }
@@ -116,7 +115,17 @@ func streamPoses(_ fd: Int32, _ body: (Pose, String) -> Bool) {
             let line = buf.prefix(upTo: nl)
             buf.removeSubrange(...nl)
             let text = String(decoding: line, as: UTF8.self)
-            guard let p = try? JSONDecoder().decode(Pose.self, from: line) else { continue }
+            guard let p = try? JSONDecoder().decode(Pose.self, from: line) else {
+                // Say it once. This struct is typed by hand against the daemon's writer, so a
+                // renamed field reads as a daemon that publishes nothing at all.
+                if !warnedUndecodable {
+                    warnedUndecodable = true
+                    let msg = "wabe: cannot decode a published line — the daemon's schema does "
+                        + "not match this build of `wabe`:\n  \(text)\n"
+                    FileHandle.standardError.write(Data(msg.utf8))
+                }
+                continue
+            }
             if !body(p, text) { return }
         }
     }
@@ -144,13 +153,16 @@ func agentLoaded() -> Bool {
 }
 
 func doInstall() {
-    // The daemon to install sits next to this binary (both come out of the same build).
     let here = URL(fileURLWithPath: CommandLine.arguments[0])
         .resolvingSymlinksInPath().deletingLastPathComponent()
-    let built = here.appendingPathComponent("wabed")
+    // Whoever builds the daemon names it: `make` passes --daemon build/wabed, and on its own this
+    // installs the copy beside itself, which is what re-running an installed `wabe install` means.
+    // Never searched relative to the working directory — that would let the daemon under launchd
+    // depend on where the command happened to be typed.
+    let built = daemonPath.map { URL(fileURLWithPath: $0) } ?? here.appendingPathComponent("wabed")
     guard FileManager.default.fileExists(atPath: built.path) else {
         FileHandle.standardError.write(Data(
-            "cannot find wabed next to \(here.path) — run `make tools` first\n".utf8))
+            "no wabed at \(built.path) — run `make install` from the checkout root\n".utf8))
         exit(1)
     }
 
@@ -159,16 +171,7 @@ func doInstall() {
                                              withIntermediateDirectories: true)
     // Install the daemon and this control binary together — `wabe status` after `wabe install`
     // should work from anywhere, not only from the build directory.
-    var toInstall = [(built, installedDaemon), (here.appendingPathComponent("wabe"), installedCLI)]
-    // Install the demo too if it has been built. Its absence is not an error: the service does
-    // not depend on it, and most people will never build it.
-    for demo in [here.appendingPathComponent(demoName),
-                 URL(fileURLWithPath: "examples/tavoletta/.build/release/" + demoName)] {
-        if FileManager.default.fileExists(atPath: demo.path) {
-            toInstall.append((demo, binDir.appendingPathComponent(demoName)))
-            break
-        }
-    }
+    let toInstall = [(built, installedDaemon), (here.appendingPathComponent("wabe"), installedCLI)]
     for (src, dst) in toInstall {
         guard FileManager.default.fileExists(atPath: src.path) else { continue }
         try? FileManager.default.removeItem(at: dst)
@@ -238,42 +241,11 @@ func doInstall() {
     exit(1)
 }
 
-/// The demo lives in its own package so building the service never drags in SceneKit. This only
-/// finds and runs it: installed next to us, or built in place in a checkout.
-func doDemo() {
-    let here = URL(fileURLWithPath: CommandLine.arguments[0])
-        .resolvingSymlinksInPath().deletingLastPathComponent()
-    let candidates = [
-        here.appendingPathComponent(demoName),
-        binDir.appendingPathComponent(demoName),
-        URL(fileURLWithPath: "examples/tavoletta/.build/release/\(demoName)"),
-        URL(fileURLWithPath: "examples/tavoletta/.build/debug/\(demoName)"),
-    ]
-    guard let demo = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) })
-    else {
-        let hint = "the demo is not built. From a checkout: `make demo`.\n"
-        FileHandle.standardError.write(Data(hint.utf8))
-        exit(1)
-    }
-    let p = Process()
-    p.executableURL = demo
-    p.arguments = demoArgs
-    do {
-        try p.run()
-    } catch {
-        FileHandle.standardError.write(Data("cannot run \(demo.path): \(error)\n".utf8))
-        exit(1)
-    }
-    p.waitUntilExit()
-    exit(p.terminationStatus)
-}
-
 func doUninstall() {
     _ = run("/bin/launchctl", ["bootout", serviceTarget])
     try? FileManager.default.removeItem(at: plistPath)
-    // Everything install put in ~/.local/bin, including this binary. Install was leaving `wabe`
-    // and the demo behind.
-    for f in [installedDaemon, installedCLI, binDir.appendingPathComponent(demoName)] {
+    // Everything install put in ~/.local/bin, including this binary.
+    for f in [installedDaemon, installedCLI] {
         try? FileManager.default.removeItem(at: f)
     }
     print("wabe uninstalled: agent stopped, \(binDir.path) binaries removed")
@@ -325,8 +297,6 @@ case "uninstall":
     doUninstall()
 case "status":
     doStatus()
-case "demo":
-    doDemo()
 case "recenter":
     let fd = requireDaemon()
     _ = "recenter\n".withCString { send(fd, $0, 9, 0) }

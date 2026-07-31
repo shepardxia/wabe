@@ -30,6 +30,7 @@ final class PoseClient {
     }
 
     private var warnedDisconnected = false
+    private var warnedUndecodable = false
 
     private func readLoop() {
         struct Pose: Decodable {
@@ -68,6 +69,9 @@ final class PoseClient {
                 FileHandle.standardError.write(Data("tavoletta: connected\n".utf8))
                 warnedDisconnected = false
             }
+            // Once per connection, not once per process: a replaced daemon is a new chance to be
+            // publishing something this build cannot read, and that has to be said again.
+            warnedUndecodable = false
             fd = s
             // The daemon defaults to 30 Hz, half the render rate, which reads as lag on a fast lid
             // pivot. Ask for 120: the rate is per connection, so this costs no other client.
@@ -82,7 +86,17 @@ final class PoseClient {
                     let line = buf.prefix(upTo: nl)
                     buf.removeSubrange(...nl)
                     guard let p = try? JSONDecoder().decode(Pose.self, from: line), p.q.count == 4
-                    else { continue }
+                    else {
+                        // Say it once. Silently skipping leaves a connected socket and a frozen
+                        // piazza, which looks like a demo bug rather than a schema mismatch.
+                        if !warnedUndecodable {
+                            warnedUndecodable = true
+                            let msg = "tavoletta: cannot decode the daemon's output — schema "
+                                + "mismatch\n  \(String(decoding: line, as: UTF8.self))\n"
+                            FileHandle.standardError.write(Data(msg.utf8))
+                        }
+                        continue
+                    }
                     lock.lock()
                     q = simd_quatd(ix: p.q[1], iy: p.q[2], iz: p.q[3], r: p.q[0])
                     if p.lid >= 0 { lidDeg = p.lid }

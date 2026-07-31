@@ -57,7 +57,7 @@ wabe *wabe_replay(double sample_hz)
     wabe *w = calloc(1, sizeof(*w));
     if (!w)
         return NULL;
-    w->vqf = wvqf_create(1.0 / (sample_hz > 0 ? sample_hz : 795.0));
+    w->vqf = wvqf_create(1.0 / (sample_hz > 0 ? sample_hz : WABE_DEFAULT_SENSOR_HZ));
     w->q[0] = 1;
     w->ref[0] = 1;
     wabe_lid_filter_reset(&w->lid);

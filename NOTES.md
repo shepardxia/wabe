@@ -53,6 +53,14 @@ data. Poll via GetReport.
 The encoder is unprivileged, always on, and needs no wake. It is a **separate part from the IMU**
 with separate model coverage, so a machine can have orientation and no screen normal.
 
+**Precise, not fast.** 0.01° of resolution buys nothing in time: the value only changes on a
+~100 ms grid. Over 919 polls at 172 Hz the median gap between changes was **100.5 ms**, p90
+104.4 ms, about 17 identical reads per change — a mean change rate near 9.4 Hz. Polling harder
+returns the same number more often and nothing else. That period is `WABE_LID_PERIOD` in
+`internal.h`, and it is why `lid_filter.c` reconstructs the angle instead of holding it: published
+raw at 120 Hz the composed screen normal steps 8.7° in a single frame on an ordinary pivot.
+Encoder noise at rest, over 51 ticks, is 0.031° — the other input to the filter's gains.
+
 ## The accelerometer stall
 
 The accelerometer input stream fails to start on roughly 40% of opens: `IOHIDDeviceOpen`

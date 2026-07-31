@@ -80,7 +80,7 @@ static void *drain_loop(void *arg)
 
 wabe *wabe_start(const wabe_options *cfg, int *err)
 {
-    const int sensor_hz = cfg && cfg->sensor_hz > 0 ? cfg->sensor_hz : 795;
+    const int sensor_hz = cfg && cfg->sensor_hz > 0 ? cfg->sensor_hz : WABE_DEFAULT_SENSOR_HZ;
     const char *record_path = cfg ? cfg->record_path : NULL;
     const int skip_wake = cfg ? cfg->skip_wake : 0;
     int dummy;
@@ -142,8 +142,8 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         fprintf(w->recorder, "{\"s\":\"meta\",\"rate\":%d,\"start\":%.6f}\n", sensor_hz, wabe_now());
     }
 
-    w->caps.lid_resolution = ws_lid_resolution();
-    if (w->caps.lid_resolution == 0)
+    w->lid_resolution = ws_lid_resolution();
+    if (w->lid_resolution == 0)
         fprintf(stderr, "wabe: no hinge encoder on this machine; orientation works, "
                         "screen normal does not\n");
 
@@ -158,7 +158,7 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
     // Settle the lid before returning, so a negative lid angle means "this machine has no hinge
     // encoder" rather than "the first poll has not landed yet". Consumers read that distinction
     // off the published angle, and it is worth 100 ms at startup to make it honest.
-    if (w->caps.lid_resolution > 0) {
+    if (w->lid_resolution > 0) {
         for (int i = 0; i < 30; i++) {
             wabe_orientation o;
             wabe_read(w, &o);

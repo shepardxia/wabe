@@ -1,8 +1,10 @@
-# The service is C. The library and the daemon compile with clang and need no Swift toolchain.
+# The service is C. The library and the daemon compile with clang and need no Swift toolchain,
+# and this is the only place either one is built — Package.swift deliberately does not declare
+# wabed, so there is exactly one daemon binary and `wabe install` ships the one you ran.
 #
-# Swift shows up only in things that genuinely need it: the control CLI, the offline replay
-# tool, and the SceneKit demo. Those build with SwiftPM, separately, and none of them is
-# required to run the service.
+# Swift shows up only in things that genuinely need it: the control CLI, the offline replay tool,
+# and the SceneKit demo. Running the service needs none of them; `make install` uses the CLI, so
+# that one path does want a Swift toolchain.
 #
 #   make            libwabe + wabed          (C, no Swift)
 #   make tools      wabe + wabe-replay       (Swift)
@@ -30,9 +32,12 @@ LIB_C    := $(wildcard Sources/libwabe/*.c)
 LIB_CXX  := $(wildcard Sources/libwabe/third_party/*.cpp)
 LIB_OBJ  := $(LIB_C:%.c=$(BUILD)/%.o) $(LIB_CXX:%.cpp=$(BUILD)/%.o)
 
--include $(LIB_OBJ:.o=.d) $(BUILD)/Sources/wabed/main.d
-
 .PHONY: all tools demo install uninstall clean
+
+# Stated explicitly because the generated dependency files included at the bottom carry rules of
+# their own: whichever target make sees first would otherwise become the default, and `make` would
+# quietly rebuild one object file instead of the daemon.
+.DEFAULT_GOAL := all
 
 all: $(BUILD)/wabed $(BUILD)/libwabe.a
 
@@ -59,17 +64,19 @@ tools:
 $(DEMO_BIN):
 	swift build -c release --package-path $(DEMO_PKG)
 
-# ARGS passes flags through, e.g. make demo ARGS="--lid 95 --shot out.png"
 demo: $(DEMO_BIN)
-	$(DEMO_BIN) $(ARGS)
+	$(DEMO_BIN)
 
 install: tools $(BUILD)/wabed
-	.build/release/wabe install
+	.build/release/wabe install --daemon $(BUILD)/wabed
 
-uninstall:
-	@.build/release/wabe uninstall 2>/dev/null || wabe uninstall
+uninstall: tools
+	.build/release/wabe uninstall
 
 clean:
 	rm -rf $(BUILD)
 	swift package clean
 	swift package --package-path $(DEMO_PKG) clean
+
+# Last, so no rule inside them can claim the default goal.
+-include $(LIB_OBJ:.o=.d) $(BUILD)/Sources/wabed/main.d

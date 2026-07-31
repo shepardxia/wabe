@@ -23,7 +23,7 @@
 //
 //   sigma_w = 0.031 deg   encoder noise, measured at rest over 51 ticks
 //   sigma_a = 50 deg/s^2  process noise: how hard a hand-driven hinge actually accelerates
-//   T       = 0.1005 s    measured sample period
+//   T       = WABE_LID_PERIOD  measured sample period (internal.h)
 //
 //   lambda = sigma_a T^2 / sigma_w = 16.2
 //   r      = (4 + lambda - sqrt(8 lambda + lambda^2)) / 4 = 0.100
@@ -49,12 +49,9 @@
 // Kalata steady-state gains for the numbers above.
 #define LID_ALPHA 0.99
 #define LID_BETA 1.62
-// Nominal sample period. Only used to bound how far the tracker will predict, and to force a
-// correction when the encoder sits still — without that the velocity estimate would coast.
-#define LID_T 0.1005
 // How long the tracker may extrapolate past its last correction. Past about one sample period the
 // constant-velocity model is guessing, and a dropped report should not send the angle flying.
-#define LID_HORIZON (1.5 * LID_T)
+#define LID_HORIZON (1.5 * WABE_LID_PERIOD)
 #define LID_TAU 0.050
 // How much of the tracked rate the output actually rides.
 //
@@ -96,7 +93,7 @@ void wabe_lid_filter_push(wabe_lid_filter *f, double deg, double now)
     // staircase. Correct on a changed reading, or when the grid says one is due anyway so a lid
     // that has genuinely stopped decays its velocity instead of coasting.
     const double dt = now - f->t;
-    if (deg == f->last_raw && dt < LID_T)
+    if (deg == f->last_raw && dt < WABE_LID_PERIOD)
         return;
     f->last_raw = deg;
     if (dt <= 0)

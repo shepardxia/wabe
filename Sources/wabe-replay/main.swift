@@ -44,7 +44,7 @@ guard let capturePath, let data = readCapture(capturePath) else {
 // --- parse capture ---
 var accel: [wabe_sample] = []
 var gyro: [wabe_sample] = []
-var rate = 795.0
+var rate = Double(WABE_DEFAULT_SENSOR_HZ)
 for line in data.split(separator: UInt8(ascii: "\n")) {
     guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
           let s = obj["s"] as? String else { continue }

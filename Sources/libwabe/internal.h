@@ -8,6 +8,10 @@
 #include <pthread.h>
 #include <stdio.h>
 
+/// Measured period of the hinge encoder: it reports 0.01 deg but only refreshes on this grid, so
+/// everything that models the lid in time is pinned to it. See NOTES.md for the measurement.
+#define WABE_LID_PERIOD 0.1005
+
 /// Reconstructs the lid angle between hinge samples; see lid_filter.c for why it has to.
 typedef struct {
     double x, v;      // angle (deg) and rate (deg/s), the tracker's state
@@ -32,15 +36,15 @@ struct wabe {
     wabe_lid_filter lid;
     double last_t;
     int first;
-
-    wabe_caps caps;
+    /// Degrees per count of the hinge encoder; 0 on a machine with none. Zero for replay handles,
+    /// which never touch a sensor.
+    double lid_resolution;
 
     // Live mode only: a thread drains the sensors into the estimate above.
     pthread_mutex_t lock;
     pthread_t thread;
     int tracking;
     FILE *recorder;
-
 };
 
 double wabe_now(void);

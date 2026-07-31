@@ -1,15 +1,20 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// The service: a C library, the daemon, the control CLI, and offline replay.
-// The SceneKit demo is a separate package in examples/tavoletta, so building or installing
-// wabe doesn't drag in an app you didn't ask for.
+// The Swift tools: the control CLI and offline replay. Everything else is the Makefile's.
+//
+// wabed is deliberately absent. It builds from Sources/wabed with clang via `make`, and declaring
+// it here as well produced a second daemon binary from the same source under different flags —
+// with `wabe install` shipping whichever one happened to sit beside it. One daemon, one compiler.
+// libwabe stays because wabe-replay links it.
+//
+// The SceneKit demo is a separate package in examples/tavoletta, so building or installing wabe
+// doesn't drag in an app you didn't ask for.
 let package = Package(
     name: "wabe",
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "libwabe", targets: ["libwabe"]),
-        .executable(name: "wabed", targets: ["wabed"]),
         .executable(name: "wabe", targets: ["wabe"]),
     ],
     targets: [
@@ -21,7 +26,6 @@ let package = Package(
                 .linkedLibrary("c++"),
             ]
         ),
-        .executableTarget(name: "wabed", dependencies: ["libwabe"]),
         .executableTarget(name: "wabe", dependencies: []),
         .executableTarget(name: "wabe-replay", dependencies: ["libwabe"]),
     ],
