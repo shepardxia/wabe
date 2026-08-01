@@ -61,6 +61,24 @@ returns the same number more often and nothing else. That period is `WABE_LID_PE
 raw at 120 Hz the composed screen normal steps 8.7° in a single frame on an ordinary pivot.
 Encoder noise at rest, over 51 ticks, is 0.031° — the other input to the filter's gains.
 
+**The noise at rest is white.** Over a 34 s stationary window (309 fresh readings, 9.1 Hz) the
+reading has σ = 0.036°, autocorrelation under 0.15 at every lag out to 4 s, and block means that
+fall as 1/√N to within a few percent. Averaging therefore works, and a reconstruction that sits
+*above* 0.036° at rest is inventing motion rather than measuring it.
+
+That is what a constant-velocity model does if you let it. The hinge is a friction joint: it does
+not move unless a hand bends it, so a residual the size of the noise is evidence of nothing, and
+feeding it to an α-β tracker turns a 0.04° wiggle into ~1 deg/s of estimated rate that the output
+then extrapolates across the sample gap. Measured end to end on a stationary lid, the ungated
+filter published 0.049° rms / 0.42° peak-to-peak from an input of 0.036°. Gating the correction on
+whether the residual clears a few σ (`LID_GATE`) drops it to 0.013° rms / 0.24°, and on a window
+the rest detector also calls still, 0.003° rms / 0.010°. Pivot response is unchanged: same range,
+same worst frame step, same median step.
+
+Do not try to gate this on the IMU's `at_rest` flag instead. Measured, it reads false for many
+seconds at a time while the lid is provably stationary on a desk, so it would unfreeze constantly.
+The evidence has to come from the encoder itself.
+
 ## The accelerometer stall
 
 The accelerometer input stream fails to start on roughly 40% of opens: `IOHIDDeviceOpen`

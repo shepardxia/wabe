@@ -72,9 +72,9 @@ swift run wabe-replay session.jsonl.gz
 
 ```
 still segments (>= 2 s, filter rest flag), settled values:
- 0     1.5s–  40.1s ( 38.6s)  yaw    +0.042°   lid  108.73°   screen  +19.20° above horizontal
- 1    72.0s– 152.2s ( 80.2s)  yaw    -2.207°   lid  110.86°   screen  +21.32° above horizontal
- 2   176.6s– 207.4s ( 30.7s)  yaw    -2.490°   lid  104.84°   screen  +15.28° above horizontal
+ 0     1.5s–  40.1s ( 38.6s)  yaw    +0.042°   lid  108.71°   screen  +19.18° above horizontal
+ 1    72.0s– 152.2s ( 80.2s)  yaw    -2.207°   lid  110.85°   screen  +21.31° above horizontal
+ 2   176.6s– 207.4s ( 30.7s)  yaw    -2.490°   lid  104.89°   screen  +15.33° above horizontal
  3   228.4s– 252.7s ( 24.3s)  yaw    -2.414°   lid   92.38°   screen   +2.82° above horizontal
 ```
 

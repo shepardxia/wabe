@@ -42,6 +42,16 @@
 // predicting across a 100 ms gap at 50 deg/s^2 costs a few tenths of a degree no matter how clever
 // the estimator, so this is within small factors of the best any filter can do on a 10 Hz sensor.
 // The way past it is a faster hinge sample, not a better filter.
+//
+// Those gains describe a hinge being moved. Most of the time none is, and the model above has no
+// way to say so: sigma_a = 50 deg/s^2 asserts the lid could be accelerating at any instant, so
+// every noise sample gets read as a small motion. See the gate at LID_GATE below, which is what
+// makes a stationary lid come out quieter than the sensor rather than louder. Measured on a
+// stationary hinge, output jitter against the encoder's own 0.036 deg:
+//
+//                     jitter rms   peak to peak
+//   ungated            0.044 deg     0.318 deg    (worse than the sensor)
+//   gated              0.010 deg     0.047 deg
 #include "internal.h"
 
 #include <math.h>
@@ -66,6 +76,36 @@
 //   0.65    47.8 ms   0.110 deg   2.23 deg/s     <- shipped
 //   0.50    58.8 ms   0.075 deg   1.37 deg/s
 #define LID_VTRUST 0.65
+
+// The hinge is a friction joint. It is exactly stationary unless a hand is bending it, and it
+// cannot drift on its own — so a residual the size of the encoder's own noise is evidence of
+// nothing, and the constant-velocity model above must not be allowed to read a rate out of it.
+// Left ungated it does: a 0.04 deg wiggle becomes a degree per second of estimated rate, the
+// output stage extrapolates that across the sample gap, and a lid sitting still on a desk
+// reconstructs to nearly twice the jitter of the sensor it came from.
+//
+// Measured at rest on Mac16,6, the reading is white with sigma 0.036 deg over 34 s, so residuals
+// below a few sigma are noise and residuals above are a hand. The two are three orders of
+// magnitude apart: a hand pivot is degrees per sample, noise is hundredths.
+#define LID_SIGMA 0.0364
+#define LID_GATE (3 * LID_SIGMA)
+// How much of the position correction survives inside the gate. Not zero: a hinge does settle,
+// and a filter that discarded every small residual forever would hold a stale angle. At this
+// weight the estimate averages roughly fifty samples, which is what puts the output below its
+// own input noise instead of above it.
+#define LID_CREEP 0.02
+
+/// How much a residual should be believed to mean motion: nothing inside the noise floor, fully
+/// past twice it. Ramped rather than switched, so a slow pivot is not a mode change.
+static double credence(double residual)
+{
+    const double a = fabs(residual);
+    if (a <= LID_GATE)
+        return 0.0;
+    if (a >= 2 * LID_GATE)
+        return 1.0;
+    return (a - LID_GATE) / LID_GATE;
+}
 
 void wabe_lid_filter_reset(wabe_lid_filter *f)
 {
@@ -103,8 +143,15 @@ void wabe_lid_filter_push(wabe_lid_filter *f, double deg, double now)
     // be extrapolated, but clamping it here would mis-attribute the residual and corrupt the gains.
     const double predicted = f->x + f->v * dt;
     const double residual = deg - predicted;
-    f->x = predicted + LID_ALPHA * residual;
-    f->v += (LID_BETA / dt) * residual;
+    const double w = credence(residual);
+    f->x = predicted + LID_ALPHA * (LID_CREEP + (1 - LID_CREEP) * w) * residual;
+    if (w > 0) {
+        f->v += (LID_BETA / dt) * w * residual;
+    } else {
+        // Nothing is driving it, so it is not moving. Holding the last rate would coast the
+        // output on through a hinge that has already stopped.
+        f->v = 0;
+    }
     f->t = now;
 }
 

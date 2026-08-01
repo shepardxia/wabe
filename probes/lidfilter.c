@@ -24,6 +24,64 @@ static double truth(double t)
     return 108.0;
 }
 
+// Measured on Mac16,6 over a 34 s stationary window: the hinge reading is white to within the
+// resolution of the test (autocorrelation under 0.15 at every lag, block means falling as
+// 1/sqrt(N)), so averaging is the right thing and the floor below is real rather than assumed.
+#define REST_SIGMA 0.0364
+
+static unsigned long seed = 1;
+/// Deterministic, so a jitter number is a property of the filter and not of the run.
+static double gauss(void)
+{
+    double u1, u2;
+    seed = seed * 6364136223846793005UL + 1442695040888963407UL;
+    u1 = ((seed >> 11) + 1.0) / 9007199254740993.0;
+    seed = seed * 6364136223846793005UL + 1442695040888963407UL;
+    u2 = (double)(seed >> 11) / 9007199254740992.0;
+    return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+}
+
+/// What the output does while nothing is moving it. The hinge is a friction joint: it is exactly
+/// stationary unless a hand is bending it, so every degree of travel here is invented.
+static int rest_case(void)
+{
+    wabe_lid_filter f;
+    wabe_lid_filter_reset(&f);
+    const double held_true = 108.0;
+    double next_sample = 0, held = held_true;
+    double lo = 1e9, hi = -1e9, sum = 0, sum2 = 0;
+    int n = 0;
+
+    for (double t = 0; t < 40.0; t += PUB) {
+        if (t >= next_sample) {
+            held = round((held_true + REST_SIGMA * gauss()) * 100.0) / 100.0;
+            next_sample += T;
+        }
+        wabe_lid_filter_push(&f, held, t);
+        wabe_lid_filter_push(&f, held, t);
+        const double out = wabe_lid_filter_value(&f, t);
+        if (out < 0 || t < 2.0) continue;  // let it prime
+        if (out < lo) lo = out;
+        if (out > hi) hi = out;
+        sum += out - held_true;
+        sum2 += (out - held_true) * (out - held_true);
+        n++;
+    }
+    const double rms = sqrt(sum2 / n);
+    const double bias = sum / n;
+    printf("\n-- at rest, %d samples over 38 s --\n", n);
+    printf("input noise        %.4f deg rms  (measured encoder, white)\n", REST_SIGMA);
+    printf("output jitter      %.4f deg rms   p2p %.3f deg\n", rms, hi - lo);
+    printf("bias               %+.4f deg\n", bias);
+    printf("vs raw encoder     %.2fx\n", rms / REST_SIGMA);
+    // A filter that reconstructs a stationary hinge should sit below its own input noise, not
+    // above it: the samples are independent, so averaging is free and the only cost is lag that
+    // nothing is there to notice.
+    const int ok = rms < REST_SIGMA && (hi - lo) < 0.15 && fabs(bias) < 0.01;
+    printf("%s\n", ok ? "ok" : "FAIL");
+    return ok;
+}
+
 int main(void)
 {
     wabe_lid_filter f;
@@ -81,5 +139,5 @@ int main(void)
     const int ok = n > 300 && worst_step < 2 * true_step && lag / 87 < 0.075
                    && overshoot < 0.35 && snapback * 120 < 4;
     printf("%s\n", ok ? "ok" : "FAIL");
-    return ok ? 0 : 1;
+    return (ok && rest_case()) ? 0 : 1;
 }
