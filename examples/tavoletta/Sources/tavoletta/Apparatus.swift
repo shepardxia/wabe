@@ -113,8 +113,13 @@ final class Apparatus {
     private func anchor(to ref: Panel) {
         eyeDir = horizontalGaze(ref.normal)
         let station = ref.center + eyeDir * eyeDist - SIMD3(0, 0, EYE_HEIGHT)
-        // Piazza +Y is the way you were looking; the pavement stays level because up is gravity.
-        let forward = -eyeDir
+        // Piazza +Y runs back over your shoulder, which is where a mirror looks. Brunelleschi
+        // stood in the cathedral's central portal and painted the Baptistery in front of him, so
+        // the Baptistery is the subject and has to land in the reflection; the piazza is laid out
+        // with it at +Y. Pointing +Y the way the screen faces instead puts the cathedral's own
+        // doors a few metres from the eye and the subject of the demonstration behind the viewer.
+        // The pavement stays level because up is gravity.
+        let forward = eyeDir
         let psi = atan2(forward.y, forward.x) - .pi / 2
         placement = simd_float4x4(columns: (
             SIMD4(Float(cos(psi)), Float(sin(psi)), 0, 0),

@@ -292,10 +292,11 @@ enum Piazza {
 
     // MARK: - Santa Maria del Fiore
 
-    /// The cathedral the viewer has just walked out of: its west front 38 m behind the station,
-    /// its flank running away up the right-hand side. Behind is where the mirror looks, so this is
-    /// what the screen shows at rest; the flank is what makes a turn continuous instead of a cut
-    /// between two unrelated pictures.
+    /// The cathedral the viewer has just walked out of: its west front 38 m off the station on the
+    /// side away from the Baptistery, its flank running up the right. It is not in the reflection
+    /// at rest and should not be — the subject is the Baptistery — so this is what a turn finds,
+    /// and the flank is what makes that turn continuous instead of a cut between two unrelated
+    /// pictures.
     private static func buildDuomo(into parent: SCNNode) {
         let marble = paint(mix(Tex.Palette.carrara, Tex.Palette.ground, 0.22), roughness: 0.78)
 
