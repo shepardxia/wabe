@@ -82,14 +82,10 @@ enum Piazza {
         buildLighting(into: world)
         buildSun(into: world)
 
-        // The mirror reflects the world with a transform of determinant -1, which reverses every
-        // triangle's winding, so the default culling would throw away exactly the faces that
-        // should be visible. Cull the other side rather than culling nothing: `isDoubleSided`
-        // also renders correctly but rasterises every back face too, for about 12% of the frame.
-        scene.rootNode.enumerateHierarchy { node, _ in
-            node.geometry?.materials.forEach { $0.cullMode = .front }
-        }
-
+        // Culling is left alone on purpose. The mirror's transform has determinant -1, which is
+        // the kind of thing that looks like it must flip which face is front — it does not here,
+        // and overriding cullMode to .front hides every facade in the piazza while leaving the
+        // pavement and the construction lines in place, so the demo still looks like a demo.
         return (scene, world)
     }
 
