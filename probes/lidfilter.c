@@ -1,9 +1,6 @@
 // Does the lid reconstruction do what lid_filter.c claims? Drives it with a synthetic hinge at the
 // real sensor's rate and quantization, with no sensor and no daemon in the way, and prints the
 // three numbers the design was chosen on: lag, overshoot, and frame-to-frame step.
-//
-//   clang -O2 -ISources/libwabe -ISources/libwabe/include -o lidfilter probes/lidfilter.c \
-//       Sources/libwabe/lid_filter.c -lm
 #include "internal.h"
 
 #include <math.h>
@@ -24,13 +21,9 @@ static double truth(double t)
     return 108.0;
 }
 
-// Measured on Mac16,6 over a 34 s stationary window: the hinge reading is white to within the
-// resolution of the test (autocorrelation under 0.15 at every lag, block means falling as
-// 1/sqrt(N)), so averaging is the right thing and the floor below is real rather than assumed.
 #define REST_SIGMA 0.0364
 
 static unsigned long seed = 1;
-/// Deterministic, so a jitter number is a property of the filter and not of the run.
 static double gauss(void)
 {
     double u1, u2;
@@ -74,9 +67,6 @@ static int rest_case(void)
     printf("output jitter      %.4f deg rms   p2p %.3f deg\n", rms, hi - lo);
     printf("bias               %+.4f deg\n", bias);
     printf("vs raw encoder     %.2fx\n", rms / REST_SIGMA);
-    // A filter that reconstructs a stationary hinge should sit below its own input noise, not
-    // above it: the samples are independent, so averaging is free and the only cost is lag that
-    // nothing is there to notice.
     const int ok = rms < REST_SIGMA && (hi - lo) < 0.15 && fabs(bias) < 0.01;
     printf("%s\n", ok ? "ok" : "FAIL");
     return ok;
@@ -96,7 +86,6 @@ int main(void)
 
     for (double t = 0; t < SPAN; t += PUB) {
         if (t >= next_sample) {
-            // What the encoder would report: quantized to 0.01 deg, on its own slow grid.
             held = round(truth(t) * 100.0) / 100.0;
             next_sample += T;
         }
@@ -134,8 +123,6 @@ int main(void)
     printf("overshoot          %.3f deg\n", overshoot);
     printf("snap-back          %.3f deg/s\n", snapback * 120);
     printf("step per frame     %.3f deg   (true motion %.3f)\n", worst_step, true_step);
-    // Bounds, not targets: each is well clear of the shipped design point, so this fails on a
-    // regression rather than on retuning.
     const int ok = n > 300 && worst_step < 2 * true_step && lag / 87 < 0.075
                    && overshoot < 0.35 && snapback * 120 < 4;
     printf("%s\n", ok ? "ok" : "FAIL");

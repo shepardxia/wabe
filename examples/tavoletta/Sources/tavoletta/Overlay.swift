@@ -1,14 +1,3 @@
-// The construction, drawn on top of the picture.
-//
-// A sinopia is the red-ochre underdrawing a fresco painter lays on the arriccio before the final
-// plaster covers it: the geometry, made visible, under the paint. That is what this overlay is.
-// Every mark comes from `Construction`, which is measured off the very frustum that rendered the
-// frame beneath it — so a mark that misses the thing it names is a real disagreement between the
-// projection and the render, not a drawing bug. Nothing here is nudged to fit.
-//
-// The context is bottom-left origin, y up, in points, and may be a live view's or a bitmap's from
-// `--shot`. So: no view state, no NSGraphicsContext, no AppKit drawing. Text is Core Text drawn
-// straight into the CGContext, which is the one path that works in both.
 
 import CoreGraphics
 import CoreText
@@ -51,8 +40,6 @@ func drawConstruction(_ c: Construction, in ctx: CGContext, size: CGSize) {
     defer { ctx.restoreGState() }
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
-    // The text matrix is part of the graphics state and a stale one from the caller would mirror
-    // every glyph; Core Text's own y-up convention already matches this context.
     ctx.textMatrix = .identity
 
     // Laid out first, drawn last: the labels need its rectangle to keep out from under it, and it
@@ -76,18 +63,11 @@ func drawConstruction(_ c: Construction, in ctx: CGContext, size: CGSize) {
 
 // MARK: - The sun on the glass
 
-/// The screen is a mirror and this is what it catches.
-///
-/// Worth watching for one reason: a mirror turned by an angle turns the reflected ray by twice
-/// that angle, so the glint crosses the panel at double the rate the lid moves. It is the same
-/// screen normal the peephole reports, read out through a two-to-one gear.
 private func drawGlare(_ c: Construction, _ ctx: CGContext, _ size: CGSize) {
     guard c.glintStrength > 0.02 else { return }
     ctx.saveGState()
     defer { ctx.restoreGState() }
 
-    // A broad sheen across the whole pane, the part of the reflection that is not the sun itself.
-    // Steep, because glass only turns milky when it is close to square on to the source.
     let sheen = pow(c.glintStrength, 34) * 0.15
     if sheen > 0.004 {
         ctx.setFillColor(rgb(glareHex, sheen))
@@ -96,8 +76,6 @@ private func drawGlare(_ c: Construction, _ ctx: CGContext, _ size: CGSize) {
 
     guard let g = c.glint else { return }
     let p = viewPoint(g, size: size)
-    // Radius in points, not NDC: the lobe is a property of how rough the coating is, not of how
-    // big the window happens to be.
     let r = min(size.width, size.height) * 0.42
     let core = pow(c.glintStrength, 40)
     guard let bloom = CGGradient(colorsSpace: deviceRGB,
@@ -106,9 +84,6 @@ private func drawGlare(_ c: Construction, _ ctx: CGContext, _ size: CGSize) {
                                           rgb(glareHex, 0)] as CFArray,
                                  locations: [0, 0.30, 1])
     else { return }
-    // No .drawsAfterEndLocation: the end colour is fully transparent, so it paints nothing but
-    // still composites the whole context. Two full-screen composites a frame is most of this
-    // overlay's cost, and this one buys nothing.
     ctx.drawRadialGradient(bloom, startCenter: p, startRadius: 0, endCenter: p, endRadius: r,
                            options: [])
 
@@ -180,8 +155,6 @@ private func drawVanishing(_ c: Construction, _ ctx: CGContext, _ size: CGSize, 
         return
     }
 
-    // Off-panel is a real state — the pavement's orthogonals converge somewhere the screen no
-    // longer covers — so say where it went instead of dropping it silently.
     guard let (_, edge) = clipToUnitSquare(SIMD2(0, 0), v) else { return }
     let tip = viewPoint(edge, size: size)
     let mid = viewPoint(SIMD2(0, 0), size: size)
@@ -193,9 +166,6 @@ private func drawVanishing(_ c: Construction, _ ctx: CGContext, _ size: CGSize, 
     guard len > 1e-6 else { return }
     let ux: CGFloat = dx / len, uy: CGFloat = dy / len
     let nx: CGFloat = -uy, ny: CGFloat = ux
-    // Clamped into an inset rectangle rather than merely backed off along the ray: when the
-    // vanishing point leaves through a corner the ray exits at that corner, and an arrow drawn
-    // there is half off the panel and easy to miss.
     let inset: CGFloat = 26
     var apex = CGPoint(x: tip.x - ux * 12, y: tip.y - uy * 12)
     apex.x = min(max(apex.x, inset), max(inset, size.width - inset))
@@ -211,8 +181,6 @@ private func drawVanishing(_ c: Construction, _ ctx: CGContext, _ size: CGSize, 
     ctx.closePath()
     ctx.fillPath()
 
-    // Offset the label off the ray, not back along it: backing off keeps colliding with the arrow
-    // once the edge clamp slides the text sideways.
     let high = apex.y > size.height / 2
     let anchorPoint = CGPoint(x: apex.x, y: apex.y + (high ? -20 : 20))
     drawLabel(ctx, "vanishing point", at: anchorPoint, anchor: .center, in: size, avoid: avoid)
@@ -231,8 +199,6 @@ private func drawPanelCentre(_ ctx: CGContext, _ size: CGSize, locked: Bool) {
     cross(ctx, at: p, arm: locked ? 25 : 9, gap: locked ? 17 : 0)
 }
 
-/// Brunelleschi's drilled hole. Dark ring, bright rim, and an open centre — you look *through* it,
-/// so the piazza shows in the middle rather than a painted dot.
 private func drawPeephole(_ c: Construction, _ ctx: CGContext, _ size: CGSize, locked: Bool, avoid: CGRect) {
     let p = viewPoint(c.principal, size: size)
 
@@ -342,10 +308,6 @@ private struct Readout {
 
 private enum Anchor { case left, center }
 
-/// A small label in the manner of an inscription: caps, a little tracking, on a faint cream plate
-/// so it survives being drawn over pale marble. The position is clamped into the panel, and then
-/// out from under `avoid` (the readout, which is drawn on top of everything) — a mark whose label
-/// is hidden under the numbers is worse than one whose label sat a little further away.
 private func drawLabel(_ ctx: CGContext, _ text: String, at p: CGPoint, anchor: Anchor, in size: CGSize,
                        font: CTFont = Face.label, color: CGColor = rgb(sinopiaHex, 0.95),
                        avoid: CGRect = .null) {

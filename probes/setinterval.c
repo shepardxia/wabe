@@ -1,9 +1,6 @@
 // Set AppleSPUHIDDriver sensor properties, and report per-property return codes so we can tell which
 // ones a non-root process is allowed to change. ReportInterval is the only real rate lever (userspace
 // decimation happens after the wakeup, so it saves no power); knowing whether it needs root decides
-// whether a pose daemon must hold privilege to change rates.
-// Usage: setinterval <interval_us> [reporting_state] [power_state]
-//   interval_us 0 with states 0 puts the sensors back to sleep.
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #include <stdio.h>

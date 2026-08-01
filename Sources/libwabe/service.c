@@ -36,9 +36,8 @@ static int listen_unix(const char *path)
 
 int wabe_serve(const wabe_service *cfg)
 {
-    // SO_NOSIGPIPE on accepted fds is not enough: a client that connects, writes, and exits
-    // before our accept() leaves a fd the setsockopt fails on, and the next broadcast send()
-    // would kill the process with SIGPIPE (observed: `wabe recenter` == daemon exit 141).
+    // A client that connects, writes and exits before accept() leaves a fd that SO_NOSIGPIPE
+    // fails on, and the next send() raises SIGPIPE (observed: `wabe recenter` == exit 141).
     signal(SIGPIPE, SIG_IGN);
 
     const double publish_hz = cfg && cfg->publish_hz > 0 ? cfg->publish_hz : 30;
@@ -57,9 +56,7 @@ int wabe_serve(const wabe_service *cfg)
     }
     fprintf(stderr, "wabed: %.1f Hz publish, socket %s\n", publish_hz, sock_path);
 
-    // Each connection carries its own heading zero and its own rate. Sharing either would mean
-    // one client's `recenter` snapping every other client's world, and one client's frame rate
-    // dictating everyone's.
+    // Each connection carries its own heading zero and its own rate.
     struct client {
         int fd;
         double ref[4];
@@ -69,8 +66,8 @@ int wabe_serve(const wabe_service *cfg)
     int nclients = 0;
 
     for (;;) {
-        // Two clocks on purpose: the publish grid is an interval and rides the monotonic one, the
-        // published t is a date and rides the wall.
+        // The publish grid is an interval and rides the monotonic clock; the published t is a
+        // date and rides the wall.
         const double now = wabe_now();
         const double wall = wabe_wall_now();
         wabe_orientation o;
@@ -81,8 +78,7 @@ int wabe_serve(const wabe_service *cfg)
                 i++;
                 continue;
             }
-            // Advance on a fixed grid. Resetting the deadline to `now` would fold each cycle's
-            // overshoot into the next period, which cost ~4 Hz at a nominal 30 (measured).
+            // Advance on a fixed grid, worth ~4 Hz at a nominal 30 (measured).
             clients[i].next_pub += clients[i].interval;
             if (now - clients[i].next_pub > clients[i].interval)
                 clients[i].next_pub = now + clients[i].interval;  // far behind: resync

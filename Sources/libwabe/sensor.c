@@ -91,10 +91,6 @@ static float axis(const uint8_t *r, int off) {
 
 static uint8_t cbBuf[2][256];
 
-// Report layout. 22-byte reports with int32 LE at 6/10/14 are documented on M3 Pro (olvvier)
-// and measured here on M4 Pro, but nothing guarantees that across generations, and a wrong
-// guess yields plausible-looking garbage rather than an error. So the offsets are discovered:
-// gravity means a resting accelerometer must read near 1 g, and only the true layout does.
 #define PROBE_MAX 48
 
 static int axisOffsets[3] = {6, 10, 14};  // documented layout; only used once gravity confirms it
@@ -122,8 +118,7 @@ static void onReport(void *ctx, IOReturn result, void *sender, IOHIDReportType t
 }
 
 // Pick the offset triple whose accelerometer magnitude sits closest to 1 g across the probe
-// window. A layout that is merely misaligned produces magnitudes orders of magnitude off, so
-// the band is deliberately wide: this rejects wrong parses, it does not calibrate anything.
+// window. Wrong layouts land orders of magnitude off, so the accept band is wide.
 static int discoverLayout(void) {
 	int n = atomic_load(&probeCount);
 	if (n > PROBE_MAX) n = PROBE_MAX;
@@ -166,10 +161,6 @@ static pthread_t readerThread;
 static CFRunLoopRef readerLoop;
 static _Atomic int running;
 
-// The accel stream fails to start on a large fraction of opens, and neither in-process reopen,
-// driver ReportingState bounces, nor seize-open ever revived a stuck instance past attempt 2
-// (measured; see NOTES.md "accel stream stall"). Retry with a fresh IOHIDManager a few times,
-// then report dead — the caller re-execs the process, which reliably rerolls the stall.
 static int openVerified(long usage, long ringIdx, int probe) {
 	for (int attempt = 1; attempt <= 3; attempt++) {
 		IOHIDManagerRef mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);

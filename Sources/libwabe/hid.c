@@ -1,5 +1,4 @@
-// Finding an SPU HID device. Shared by the IMU reader and the lid poll, which are otherwise
-// unrelated: they want different devices, different report types, and different lifetimes.
+// Finding an SPU HID device. Shared by the IMU reader and the lid poll.
 #include "hid.h"
 
 #include <stdlib.h>
@@ -11,9 +10,6 @@ long wabe_hid_num_prop(IOHIDDeviceRef d, CFStringRef key) {
 	return out;
 }
 
-// A device may expose the usage we want as its primary collection or as one of several pairs.
-// Matching only the primary is what makes hardcoded lookups miss on machines that enumerate
-// differently, so check the pairs array too.
 static int has_usage_pair(IOHIDDeviceRef d, long page, long usage) {
 	CFArrayRef pairs = IOHIDDeviceGetProperty(d, CFSTR(kIOHIDDeviceUsagePairsKey));
 	if (!pairs || CFGetTypeID(pairs) != CFArrayGetTypeID()) return 0;

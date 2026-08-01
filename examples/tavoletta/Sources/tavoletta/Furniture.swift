@@ -1,33 +1,11 @@
-// The things standing on the pavement between the viewer and the Baptistery.
-//
-// Everything here exists for one reason: an unbroken paved plane has no scale. A column at 21 m and
-// a wellhead at 34 m give the eye two intermediate rungs between the marble bands underfoot and the
-// architecture at the far end, and — more useful still — they *occlude*, which a painted plane
-// cannot. Their shadows do as much work as their masses.
-//
-// Frame is the piazza frame throughout: Z up, pavement at z = 0, +Y toward the Baptistery. Each
-// piece is built about its own footprint centre at z = 0 and left there; the caller positions it.
-//
-// SceneKit's SCNCylinder, SCNCone, SCNTube and SCNPlane are all born about the *y* axis, so every
-// one of them below carries `standUp`. SCNBox is axis-aligned and needs nothing.
 import AppKit
 import SceneKit
 import simd
 
-/// Mid-ground pieces: the things that make 15 to 40 metres of pavement read as distance rather
-/// than as an empty surface. All returned nodes are built in the piazza frame — Z up, pavement
-/// at z = 0 — and are positioned by the caller unless stated otherwise.
 enum Furniture {
 
     // MARK: - column
 
-    /// A granite column on a stepped base with a bronze figure on top. `height` is pavement to
-    /// the top of the figure. Fluted shaft, simple capital.
-    ///
-    /// Proportions are fractions of `height` rather than fixed metres, so the piece stays a column
-    /// and not a bollard or a mast whatever the caller asks for. They are set for the Florentine
-    /// type — the Colonna della Giustizia — which is stouter than a classical order: about six and
-    /// a third diameters of shaft over a broad two-step base.
     static func column(height h: Double) -> SCNNode {
         let group = SCNNode()
         group.name = "column"
@@ -40,9 +18,6 @@ enum Furniture {
         let granite = paint(Tex.Palette.granite, roughness: 0.74)
         let worn = paint(mix(Tex.Palette.carrara, Tex.Palette.ground, 0.32), roughness: 0.80)
 
-        // Two square steps and a square dado. A round shaft rising straight out of the paving reads
-        // as a pipe; the corners are what say "base", and they are also what catch the sun on one
-        // face and lose it on the next, which is how the eye reads the piece as solid.
         var z = 0.0
         let stepRise = 0.026 * h
         for i in 0..<2 {
@@ -82,12 +57,6 @@ enum Furniture {
         return group
     }
 
-    /// A standing bronze, built from limbs rather than a mesh: at 21 m what carries is the
-    /// silhouette — one arm down, one arm up with a staff — and eight capsules give that for eight
-    /// nodes. It faces -Y, back down the piazza at the viewing station.
-    ///
-    /// `scale` is the full pavement-relative height of the figure and every dimension is a fraction
-    /// of it, so the staff's tip lands exactly on `base + scale`.
     private static func figure(scale s: Double, base z0: Double) -> SCNNode {
         let group = SCNNode()
         group.name = "figure"
@@ -120,12 +89,6 @@ enum Furniture {
 
     // MARK: - wellhead
 
-    /// A Florentine wellhead: an octagonal marble kerb about 1.6 m across and 0.9 m tall, with a
-    /// wrought-iron arch and pulley over it.
-    ///
-    /// The ironwork is the point. The marble alone is a 0.9 m lump that disappears against the
-    /// paving at 34 m; the arch stands 2 m and draws a thin dark curve against the far side of the
-    /// piazza, which is what makes the distance between them visible.
     static func wellhead() -> SCNNode {
         let group = SCNNode()
         group.name = "wellhead"
@@ -135,8 +98,6 @@ enum Furniture {
         let marble = paint(mix(Tex.Palette.carrara, Tex.Palette.ground, 0.28), roughness: 0.70)
         let iron = paint(Tex.Palette.iron, roughness: 0.55, metalness: 0.35)
 
-        // SCNTube, not SCNCylinder: the mouth has to be a hole. A dark disc laid on a solid top
-        // would be right only from directly above, and this is seen from 1.6 m off the ground.
         let kerb = SCNTube(innerRadius: 0.58, outerRadius: circumradius, height: 0.80)
         kerb.radialSegmentCount = 8
         group.addChildNode(upright(kerb, z: 0.40, marble))
@@ -145,8 +106,6 @@ enum Furniture {
         coping.radialSegmentCount = 8
         group.addChildNode(upright(coping, z: 0.85, paint(Tex.Palette.carrara, roughness: 0.55)))
 
-        // Plugs the tube 0.4 m below the rim so the opening reads as depth rather than as a
-        // window through the piece.
         let shaftFloor = SCNCylinder(radius: 0.575, height: 0.50)
         shaftFloor.radialSegmentCount = 8
         group.addChildNode(upright(shaftFloor, z: 0.25,
@@ -166,8 +125,6 @@ enum Furniture {
                                    radius: 0.035, iron))
         }
 
-        // SCNTorus lies in its own xz plane already, which here is the plane of the arch — so the
-        // pulley is the one primitive in this file that must *not* be stood up.
         let pulley = SCNTorus(ringRadius: 0.10, pipeRadius: 0.028)
         pulley.ringSegmentCount = 16
         pulley.pipeSegmentCount = 8
@@ -189,12 +146,6 @@ enum Furniture {
 
     // MARK: - kerb ring
 
-    /// A low continuous kerb ring, `radius` across, `count` segments, ~0.35 m tall and 0.5 m
-    /// wide, in the same marble as the pavement bands. Returns one node centred on the origin.
-    ///
-    /// One mesh, not `count` boxes: a 21 m ring wants forty-odd segments to stop looking like a
-    /// stop sign, and forty nodes for a kerb is forty nodes the rest of the piazza needs more.
-    /// Only the top and the two walls are built — the underside is on the pavement.
     static func kerbRing(radius: Double, count: Int) -> SCNNode {
         let n = max(3, count)
         let top = 0.35, half = 0.25
@@ -220,12 +171,6 @@ enum Furniture {
 
     // MARK: - steps
 
-    /// A flight of `steps` risers, each `rise` tall and `tread` deep, running the full `width`,
-    /// centred on x = 0 with the bottom riser's outer face at y = 0 and climbing toward +Y.
-    ///
-    /// Each step is a full-height box from the pavement up rather than a slab sitting on the one
-    /// below, so no two faces are ever coplanar at the front and the risers cannot z-fight; the
-    /// buried volume costs nothing.
     static func steps(width: Double, steps: Int, rise: Double, tread: Double) -> SCNNode {
         let group = SCNNode()
         group.name = "steps"
@@ -235,13 +180,8 @@ enum Furniture {
 
         for i in 0..<n {
             let front = Double(i) * tread
-            // The backs are staggered by 4 mm apiece for the same reason: they are flush otherwise,
-            // and a stylobate seen from the flank shows the fight.
             let back = run + Double(i) * 0.004
             let height = Double(i + 1) * rise
-            // And the flanks by 3 mm apiece, for the same reason again: staggering the backs
-            // leaves every riser exactly `width` across, so all n side faces stay coplanar and the
-            // flight z-fights down its own edge from any oblique angle.
             let box = SCNBox(width: width - Double(i) * 0.006, height: back - front,
                              length: height, chamferRadius: 0)
             box.firstMaterial = stone
@@ -257,9 +197,6 @@ enum Furniture {
     /// SCNCylinder, SCNCone, SCNTube and SCNPlane are born about SceneKit's +Y. This puts their
     /// axis on the piazza's +Z.
 
-    /// Stands a Y-born primitive on the piazza's +Z and centres it at height `z` on the axis.
-    /// SCNCylinder, SCNCone and SCNTube all need this; the pulley deliberately does not, because
-    /// its axis is horizontal.
     private static func upright(_ geometry: SCNGeometry, z: Double,
                                 _ material: SCNMaterial) -> SCNNode {
         geometry.firstMaterial = material
@@ -275,8 +212,6 @@ enum Furniture {
         slab(at: SIMD3(0, 0, (z0 + z1) / 2), size: SIMD3(side, side, z1 - z0), material)
     }
 
-    /// A cylinder running from `a` to `b`: everything in this file that is a line rather than a
-    /// mass — iron, rope, limbs — is one of these.
     private static func bar(_ a: SIMD3<Double>, _ b: SIMD3<Double>, radius: Double,
                             _ material: SCNMaterial) -> SCNNode {
         let d = b - a
@@ -298,12 +233,6 @@ enum Furniture {
         return node
     }
 
-    /// A shaft with `flutes` hollows run down it, as a single mesh — twenty grooves modelled as
-    /// nodes would cost more than every other piece here put together.
-    ///
-    /// The section's radius dips to `depth` of full at the middle of each flute and returns to full
-    /// at the arris between them, so the silhouette keeps a clean edge and the late-morning sun
-    /// rakes twenty verticals down the shaft. `topRadius` under `bottomRadius` gives the taper.
     private static func flutedShaft(height: Double, bottomRadius: Double, topRadius: Double,
                                     flutes: Int, depth: Double,
                                     _ material: SCNMaterial) -> SCNGeometry {

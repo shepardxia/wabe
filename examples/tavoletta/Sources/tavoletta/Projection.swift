@@ -1,13 +1,3 @@
-// The perspective construction, in one place.
-//
-// Brunelleschi's demonstration is a claim about three things and the relations between them: an
-// eye, a panel, and a world. Fix the eye and the world, move the panel, and the picture on the
-// panel has to change in a way that is fully determined — that determination is what this file
-// computes. Kooima's off-axis frustum gives the picture; the same matrix, read back, gives the
-// vanishing point, the horizon, and the principal point, which are the construction lines drawn
-// on top of it. They are measurements of the render, not decorations over it.
-//
-// World frame is wabe's: X right, Y forward, Z up (gravity). Meters.
 import CoreGraphics
 import simd
 
@@ -83,8 +73,6 @@ struct Frustum {
         let va = panel.lowerLeft - eye
         let vb = panel.lowerRight - eye
         let vc = panel.upperLeft - eye
-        // Distance from the eye to the panel plane. Clamped: edge-on, the frustum degenerates and
-        // the picture is undefined rather than merely extreme.
         let d = max(0.02, -dot(va, vn))
         let l = dot(vr, va) * near / d
         let r = dot(vr, vb) * near / d
@@ -115,12 +103,6 @@ struct Frustum {
     /// Image of a world direction: the vanishing point of every line parallel to it.
     func ndc(direction d: SIMD3<Double>) -> SIMD2<Double>? { project(cameraRay: toCamera(d)) }
 
-    /// The vanishing line of every plane with this normal — the horizon, for normal = up.
-    ///
-    /// Derived rather than sampled: inverting the projection, the NDC point (x, y) corresponds to
-    /// the camera ray ((x + p20)/p00, (y + p21)/p11, -1), and that ray is parallel to the plane
-    /// exactly when it is perpendicular to the plane's normal. Sampling two directions instead
-    /// fails whenever one of them happens to fall behind the eye, which for a horizon is often.
     func vanishingLine(planeNormal m: SIMD3<Double>) -> NDCLine {
         let mc = toCamera(m)
         return NDCLine(a: mc.x / p00,
@@ -128,9 +110,6 @@ struct Frustum {
                        c: mc.x * p20 / p00 + mc.y * p21 / p11 - mc.z)
     }
 
-    /// The principal point: where the panel's own perpendicular through the eye pierces it. This
-    /// is Brunelleschi's peephole. It sits at the centre of the panel exactly when the panel faces
-    /// the eye square on, so its drift off centre *is* the screen normal, drawn.
     var principalPoint: SIMD2<Double> { SIMD2(-p20, -p21) }
 }
 
@@ -152,12 +131,6 @@ struct Construction {
     /// Images of the pavement's transversals — the lines parallel to the panel's bottom edge.
     var transversals: [(SIMD2<Double>, SIMD2<Double>)] = []
 
-    /// Where the sun's reflection sits on the panel, treating the glass as the mirror it is.
-    /// Nil when the sun is behind the screen and there is nothing to catch.
-    ///
-    /// This is the most sensitive readout of the screen normal there is, and the reason is the
-    /// reflection law: turn a mirror by one degree and the reflected ray turns by two. The glint
-    /// crosses the panel at twice the rate the lid moves.
     var glint: SIMD2<Double>? = nil
     /// How squarely the panel is catching the sun, 0 to 1: the specular alignment at its centre.
     var glintStrength: Double = 0

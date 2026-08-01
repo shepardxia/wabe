@@ -1,11 +1,6 @@
 // Which lid-angle access paths does this machine answer on?
 //
 // libwabe walks the same table (Sources/libwabe/lid_reports.h) and takes the first plausible
-// entry. Run this on any MacBook to see what yours offers; the output is what a compatibility
-// report should contain.
-//
-//   clang -O2 -o lidpaths lidpaths.c ../Sources/libwabe/hid.c \
-//       -framework IOKit -framework CoreFoundation
 #include "../Sources/libwabe/hid.h"
 #include "../Sources/libwabe/lid_reports.h"
 
@@ -14,8 +9,6 @@
 int main(void) {
 	IOHIDManagerRef mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
 	IOHIDManagerSetDeviceMatching(mgr, NULL);
-	// The library's own lookup, not a copy of it: this probe exists to report what libwabe would
-	// find, which it can only do honestly by asking the same question the same way.
 	IOHIDDeviceRef lid = wabe_hid_find(mgr, 0x20, 0x8A);
 	if (!lid) {
 		printf("no lid angle sensor on this machine (usage page 0x20, usage 0x8A)\n");

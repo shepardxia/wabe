@@ -1,17 +1,6 @@
 import Foundation
 import libwabe
 
-// wabe-replay <capture.jsonl> [--out dir]
-//
-// Replays a raw chip-frame capture (wabed --record) through the libwabe filter — the exact
-// code path the live daemon runs — and reports:
-// - a trajectory file (<out>/<capture-stem>.replay.jsonl @ ~30 Hz), in the daemon's own schema
-// - still segments (filter rest detection) with settled yaw, lid angle and screen-normal elevation
-// - per-motion-segment integrated raw gyro rotation (bias-subtracted) — the scale-calibration
-//   number: an edge-aligned integer-turn spin should integrate to a multiple of ±360° about z.
-//
-// Hinge readings are replayed alongside the IMU, not dropped: the screen normal is the composition
-// the library exists to compute, and a regression check that skips it tests half the pipeline.
 
 var capturePath: String?
 var outDir = "."
@@ -78,14 +67,8 @@ let t0 = gyro[0].t
 print(String(format: "capture: %.1f s, %d accel + %d gyro + %d lid samples @ %.0f Hz nominal",
              gyro.last!.t - t0, accel.count, gyro.count, lid.count, rate))
 if lid.isEmpty {
-    // Not an error: a machine with no hinge encoder records none, and the run below reports the
-    // lid as -1 throughout, exactly as the daemon would.
     print("no hinge readings in this capture — screen normal stays zero")
 } else if lid.first!.t > gyro.last!.t || lid.last!.t < t0 {
-    // Every record in a capture is stamped on the sample clock. Hinge readings disjoint from the
-    // IMU's own span were stamped on the wall clock by a recorder that kept two, and no reader can
-    // align them. Refused rather than skipped: dropping them reports a screen normal of zero, which
-    // is indistinguishable from a machine that has no hinge at all.
     let msg = "capture stamps its hinge readings on a different clock from its samples "
         + "(lid \(String(format: "%.0f", lid.first!.t)) vs IMU \(String(format: "%.0f", t0)))\n"
         + "  it predates the single-clock recorder; re-record with probes/session.py\n"
@@ -99,8 +82,6 @@ defer { wabe_stop(w) }
 
 struct Snap {
     let t: Double
-    /// Base to world, [w, x, y, z] — the daemon's order. Deliberately not a SIMD4, whose `.x`
-    /// would name the scalar part.
     let q: [Double]
     let rpy: SIMD3<Double>
     let n: SIMD3<Double>
@@ -132,9 +113,6 @@ func feed(upTo t: Double) {
 var sliceEnd = t0
 while gi < gyro.count {
     sliceEnd += 1.0 / 30
-    // A hinge reading is stamped at the handle's present, so the IMU has to reach its moment first.
-    // Push it late and the lid filter dates it up to a slice too far forward, which on a ~10 Hz
-    // encoder is a third of a sample period of skew invented by the harness.
     while li < lid.count, lid[li].t < sliceEnd {
         feed(upTo: lid[li].t)
         wabe_set_lid(w, lid[li].deg)
@@ -199,8 +177,6 @@ for i in segments.indices {
     let n = Double(max(1, tail.count))
     segments[i].yaw = tail.map(\.rpy.z).reduce(0, +) / n
     segments[i].bias = tail.map(\.bias).reduce(SIMD3(), +) / n
-    // Averaged only where the hinge reported: a capture from a machine without one leaves the lid
-    // at -1 and the normal at zero, and meaning them would read as a screen lying flat.
     let withLid = tail.filter { $0.lidDeg >= 0 }
     if !withLid.isEmpty {
         let m = Double(withLid.count)

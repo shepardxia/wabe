@@ -1,13 +1,6 @@
 // tavoletta — Brunelleschi's mirror, held by your MacBook's screen.
 //
 // In 1425 Brunelleschi painted the Florence Baptistery on a small panel, drilled a hole through it
-// at the vanishing point, and had you look through the hole at a mirror held in your other hand.
-// Painting and building coincided. That was the proof that perspective is geometry.
-//
-// Here the screen is the mirror. wabe supplies its orientation; Piazza del Duomo is pinned to the
-// room and reflected in the glass. Turn a mirror by one degree and the reflected ray turns by two,
-// so the picture sweeps at twice the rate the lid moves — which is what makes the screen normal,
-// the one number wabe exists to publish, something you can see.
 import AppKit
 import SceneKit
 

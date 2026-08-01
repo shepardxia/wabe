@@ -1,6 +1,3 @@
-// The live window: an SCNView, an overlay on top of it, and the keys. All the geometry is in
-// Apparatus, which knows nothing about any of this — see the note at the top of that file for why
-// the split is not decoration.
 import AppKit
 import SceneKit
 import simd
@@ -13,18 +10,9 @@ let HINGE_GAP = 0.010
 /// Standing eye height above the pavement. Brunelleschi's stance, and the reason the horizon lands
 /// where it does.
 let EYE_HEIGHT = 1.60
-/// Clip planes. The near plane is a free parameter of the off-axis frustum — it does not have to
-/// touch the panel — and pushing it out to just inside the pavement buys back the depth precision a
-/// 0.02 m near plane would throw away: at the Baptistery's distance the marble bands stand 0.02 m
-/// proud, which is under the depth resolution of a near plane that close, and they z-fight.
 let NEAR = 0.8
 let FAR = 400.0
 
-/// Where a view of `viewSize` points actually is on the glass, in meters. `screenFrame` is the
-/// view's rectangle in screen coordinates; pass nil to take it as centred, which is what a headless
-/// render wants — deterministic, and independent of a window it does not have.
-///
-/// This is the only place that asks AppKit how big a point is.
 func glassRect(viewSize: CGSize, on screen: NSScreen?, screenFrame: NSRect?) -> GlassRect {
     guard let screen,
           let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
@@ -77,10 +65,6 @@ final class TavolettaView: SCNView, SCNSceneRendererDelegate {
     }
 
     // MARK: - where the window physically is
-    //
-    // Cached, because reading it means touching `window`, `screen` and view geometry, and the
-    // per-frame caller runs on SceneKit's render thread. AppKit off the main thread is a crash
-    // waiting for a slow day.
 
     private var cachedGlass = GlassRect()
     private let glassLock = NSLock()

@@ -10,9 +10,6 @@
 #define RAD2DEG (180.0 / M_PI)
 #define G_TO_MS2 9.80665
 
-// Chip->base axis maps, measured on Mac16,6 (see NOTES.md): the readout triad is left-handed
-// (chip +x = laptop left, +y = front, +z = down). Accel (true vector) maps by full negation;
-// gyro (pseudo-vector) maps by identity, so gyro samples are used as-is below.
 static void accel_chip_to_base(const double v[3], double out[3])
 {
     out[0] = -v[0];
@@ -67,11 +64,8 @@ wabe *wabe_replay(double sample_hz)
     return w;
 }
 
-// The handle's own present, in whichever clock its samples carry. The lid filter reconstructs
-// against elapsed time, so a replay must run on the recording's clock: a capture fed in as fast as
-// it parses would otherwise show the hinge a few minutes of travel inside a couple of seconds.
-// Both are CLOCK_MONOTONIC seconds — the recording's from some other boot — so the lid filter,
-// which only ever takes differences, cannot tell them apart and does not need to.
+// The handle's present, in whichever CLOCK_MONOTONIC its samples carry: the wall for live, the
+// recording's own for replay.
 static double wabe_clock(const wabe *w)
 {
     return w->replay ? w->last_t : wabe_now();
@@ -152,14 +146,10 @@ void wabe_read(wabe *w, wabe_orientation *out)
     for (int i = 0; i < 3; i++)
         out->bias[i] = w->bias[i] * RAD2DEG;
     out->at_rest = w->rest;
-    // Reconstructed to the moment it is being read, not held from the last hinge report. The
-    // encoder updates at ~10 Hz and everything downstream publishes far faster; see lid_filter.c.
+    // Reconstructed to the moment of the read; see lid_filter.c.
     const double lid = wabe_lid_filter_value(&w->lid, wabe_clock(w));
     out->lid_deg = lid;
 
-    // Laptop-intuitive angles. Roll/pitch absolute (gravity), yaw relative to the last
-    // recenter. Signs: pitch + = front edge up, roll + = right side down, yaw + = CCW from
-    // above.
     double m[3][3];
     quat_to_mat(w->q, m);
     const double about_x = atan2(m[2][1], m[2][2]); // about base X (left-right axis)

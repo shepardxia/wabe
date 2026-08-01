@@ -1,6 +1,5 @@
 // Live tracking: wake the SPU sensors, drain them on a background thread, keep the estimate in
-// orientation.c current. This is what makes wabe usable as a service rather than a loop you
-// have to write yourself.
+// orientation.c current.
 #include "internal.h"
 #include "wabe_sensor.h"
 
@@ -11,11 +10,6 @@
 #include <unistd.h>
 
 #define DRAIN_CAP 2048
-// Drain iterations between lid polls, at ~2 ms an iteration. One IOHIDDeviceGetReport on the
-// hinge measures 0.67 ms mean, 1.48 ms worst on Mac16,6, so polling every 2nd iteration samples
-// the lid at ~190 Hz for about 12% of this thread — and 100 Hz is what anything tracking the
-// screen plane needs. The old value of 50 left the published lid angle up to 100 ms stale, which
-// is not subtle: it reads as lag on any pivot fast enough to be worth watching.
 #define LID_POLL_EVERY 2
 
 double wabe_now(void)
@@ -104,12 +98,6 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         *err = WABE_ERR_OPEN;
         return NULL;
     }
-    // The IMU streams are stochastically dead per process instance and nothing in-process
-    // revives them (see NOTES.md). Callers re-exec on these for a fresh roll.
-    //
-    // Both matter, and the gyro matters more than it looks: the estimate only advances on gyro
-    // samples, so a live accelerometer with a dead gyro yields a frozen attitude while lid and
-    // timestamps keep moving. That reads as a working stream and is not one, so refuse it.
     if (!(ws_opened_mask() & 1)) {
         ws_stop();
         *err = WABE_ERR_ACCEL_DEAD;
@@ -120,8 +108,7 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         *err = WABE_ERR_GYRO_DEAD;
         return NULL;
     }
-    // Reports arrive but no candidate offset produced gravity: the layout is unknown on this
-    // machine and parsing it anyway would publish confident nonsense.
+    // Reports arrive, and no candidate offset produced gravity: the layout is unknown here.
     if (!ws_layout_known()) {
         ws_stop();
         *err = WABE_ERR_LAYOUT;
@@ -144,8 +131,7 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
             return NULL;
         }
         setvbuf(w->recorder, NULL, _IOFBF, 1 << 16);
-        // start is wall time, the only date in a capture; every per-record t below is the sample
-        // clock, so a reader can align the streams against each other without it.
+        // start is wall time, the only date in a capture; every per-record t is the sample clock.
         fprintf(w->recorder, "{\"s\":\"meta\",\"rate\":%d,\"start\":%.6f}\n", sensor_hz,
                 wabe_wall_now());
     }
@@ -163,9 +149,8 @@ wabe *wabe_start(const wabe_options *cfg, int *err)
         return NULL;
     }
 
-    // Settle the lid before returning, so a negative lid angle means "this machine has no hinge
-    // encoder" rather than "the first poll has not landed yet". Consumers read that distinction
-    // off the published angle, and it is worth 100 ms at startup to make it honest.
+    // Settle the lid before returning, so a negative published angle means the machine has no
+    // hinge encoder. Worth 100 ms at startup.
     if (w->lid_resolution > 0) {
         for (int i = 0; i < 30; i++) {
             wabe_orientation o;

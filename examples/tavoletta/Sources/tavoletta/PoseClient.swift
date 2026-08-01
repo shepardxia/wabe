@@ -6,9 +6,6 @@ final class PoseClient {
     private(set) var q = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)  // base -> world
     private(set) var lidDeg = 105.0
     private(set) var connected = false
-    /// True once a real pose has arrived. Distinct from `connected`: the socket can be up
-    /// with nothing decoded yet, and anchoring the world to the placeholder attitude in that
-    /// gap pins the piazza to a pose the laptop was never in.
     private(set) var hasPose = false
     private var fd: Int32 = -1
     private let path: String
@@ -69,8 +66,6 @@ final class PoseClient {
                 FileHandle.standardError.write(Data("tavoletta: connected\n".utf8))
                 warnedDisconnected = false
             }
-            // Once per connection, not once per process: a replaced daemon is a new chance to be
-            // publishing something this build cannot read, and that has to be said again.
             warnedUndecodable = false
             fd = s
             // The daemon defaults to 30 Hz, half the render rate, which reads as lag on a fast lid
@@ -87,8 +82,6 @@ final class PoseClient {
                     buf.removeSubrange(...nl)
                     guard let p = try? JSONDecoder().decode(Pose.self, from: line), p.q.count == 4
                     else {
-                        // Say it once. Silently skipping leaves a connected socket and a frozen
-                        // piazza, which looks like a demo bug rather than a schema mismatch.
                         if !warnedUndecodable {
                             warnedUndecodable = true
                             let msg = "tavoletta: cannot decode the daemon's output — schema "

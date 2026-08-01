@@ -54,13 +54,11 @@ typedef struct wabe wabe;
 // Open the sensors and track orientation on a background thread. cfg may be NULL for defaults.
 // Returns NULL on failure, writing a WABE_ERR_* to err if err is non-NULL.
 //
-// The IMU and the hinge encoder are separate parts with separate model coverage: a 13-inch Pro
-// has no hinge encoder, so it yields orientation but no screen normal. A machine without one is
-// not an error; o.lid_deg reads -1 and o.n stays zero, which is how you tell.
+// The IMU and the hinge encoder are separate parts with separate model coverage. On a machine
+// with only the IMU (a 13-inch Pro) this succeeds, o.lid_deg reads -1 and o.n stays zero.
 wabe *wabe_start(const wabe_options *cfg, int *err);
 
-// Latest orientation. Safe from any thread while tracking runs. Pull it when you need it: a
-// renderer wants the newest value at vsync, not a backlog.
+// Latest orientation, pulled. Safe from any thread while tracking runs.
 void wabe_read(wabe *w, wabe_orientation *out);
 
 // Make the current heading the zero of this handle's relative yaw.
@@ -98,16 +96,15 @@ typedef struct {
 
 wabe *wabe_replay(double sample_hz);
 
-// Feed a batch. Both arrays must ascend in time; gyroscope samples drive the estimate and
-// accelerometer samples correct it, so they need not be aligned or equal in length.
+// Feed a batch. Both arrays must ascend in time. Gyroscope samples drive the estimate and
+// accelerometer samples correct it; the two streams are independent in rate and alignment.
 void wabe_feed(wabe *w, const wabe_sample *accel, size_t n_accel,
                const wabe_sample *gyro, size_t n_gyro);
 
 // Hinge angle in degrees. Only the screen normal needs it; wabe_start() polls it for you.
 //
-// The reading is stamped at the handle's present, which on a replay handle is the timestamp of the
-// last sample fed. Feed up to a recorded hinge reading's moment before pushing it, or the
-// reconstruction dates it wrong.
+// Stamped at the handle's present, which on a replay handle is the last sample fed. Feed up to a
+// recorded reading's moment before pushing it.
 void wabe_set_lid(wabe *w, double deg);
 
 #ifdef __cplusplus

@@ -1,25 +1,3 @@
-// Piazza del Duomo, built once and never moved.
-//
-// The frame here is the piazza frame: origin at the viewing station on the pavement, +Y toward the
-// Baptistery, +Z up, pavement at z = 0. It matches wabe's world frame in handedness and units, so
-// re-anchoring is a rigid transform on the single node `build()` hands back — nothing in this file
-// needs to know where the laptop is.
-//
-// The station is a few metres out from the central door of Santa Maria del Fiore, which is where
-// Brunelleschi stood. Everything is placed to make that a *place* rather than a backdrop, and the
-// three things that do that are worth naming because they are the only reason most of these numbers
-// are what they are:
-//
-//   depth      — something at 5 m, 21 m, 23 m, 34 m, 65 m, 86 m and 104 m, in the same frame
-//   occlusion  — the column in front of the campanile, the campanile in front of the palazzi,
-//                the kerb ring in front of the Baptistery's steps
-//   enclosure  — architecture in every direction and taller than the frame, so tipping the lid
-//                crops a building instead of finding sky
-//
-// SceneKit's primitives are y-up, which our frame is not. Everything that comes out of SCNPlane,
-// SCNCylinder or SCNCone therefore carries an explicit stand-up rotation about X. A building lying
-// on its side is the classic failure here, so the rotation is applied in one place per primitive
-// kind rather than sprinkled at call sites.
 import AppKit
 import SceneKit
 import simd
@@ -33,19 +11,8 @@ enum Piazza {
     static let bandWidth = 0.45
     static let bandRise = 0.02
 
-    /// The pavement's marble bands, as world-frame (piazza-frame) segments, so the overlay can
-    /// trace the exact lines the renderer drew. Both arrays are in piazza coordinates at z = 0.
-    ///
-    /// These are not a description of the geometry, they are its source: `build()` extrudes each
-    /// segment into the box that gets drawn. The construction lines land on the marble because
-    /// they are computed from the same numbers, not because the numbers were copied correctly.
-    ///
-    /// The two extents agree at the corner — 8 × 4.4 = 35.2 — so the grid closes rather than
-    /// fraying, which matters because a half-drawn transversal reads as a bug in the projection.
     static let orthogonals: [(SIMD3<Double>, SIMD3<Double>)] = (-8...8).map { k in
         let x = Double(k) * 4.4
-        // Runs well behind the station, not just ahead of it. The mirror shows what is behind
-        // you, so a grid laid only in front is a grid the demo never sees.
         return (SIMD3<Double>(x, -44, 0), SIMD3<Double>(x, 56, 0))
     }
 
@@ -59,13 +26,6 @@ enum Piazza {
     static func build() -> (scene: SCNScene, world: SCNNode) {
         let scene = SCNScene()
         scene.background.contents = Tex.skyCube(sun: sunDirection)
-        // The sky is also the scene's other light: PBR stone lit by one sun and a flat ambient
-        // term goes chalky. Kept low, because it competes with the sun and the sun is what draws
-        // the shadows the perspective is read from.
-        //
-        // Its own copy of the cube, deliberately: SceneKit convolves whatever it is handed here
-        // into an irradiance map, and handing it the same array as the background replaces the
-        // background with the blurred version — a flat cream sky with no gradient at all.
         scene.lightingEnvironment.contents = Tex.skyCube(sun: sunDirection)
         scene.lightingEnvironment.intensity = 0.40
 
@@ -82,10 +42,6 @@ enum Piazza {
         buildLighting(into: world)
         buildSun(into: world)
 
-        // Culling is left alone on purpose. The mirror's transform has determinant -1, which is
-        // the kind of thing that looks like it must flip which face is front — it does not here,
-        // and overriding cullMode to .front hides every facade in the piazza while leaving the
-        // pavement and the construction lines in place, so the demo still looks like a demo.
         return (scene, world)
     }
 
@@ -131,19 +87,10 @@ enum Piazza {
     }
 
     // MARK: - Giotto's campanile
-    //
-    // The most important object in the scene, and the one the first version did not have. 14.5 m
-    // square, 85 m tall, its near corner 21 m from the eye: it fills the right-hand side of the
-    // frame from the pavement clean out of the top, occludes the palazzi behind it, and is the only
-    // thing here that rewards tipping the lid up. Near, enormous, and in the way — which is what a
-    // rendered view needs before it reads as a space instead of a surface.
 
     private static let campanileCentre = SIMD3<Double>(17, 26, 0)
     private static let campanileSide = 14.5
 
-    /// The shaft's four revetment registers and the cornice that caps each, pavement upward.
-    /// A table because the index also picks the texture, and because the cornice heights are the
-    /// only thing keeping 85 m of wall from being one undivided slab.
     private static let campanileRegisters: [(z0: Double, z1: Double, cornice: Double)] = [
         (2.0, 21.5, 1.2), (22.7, 41.0, 1.2), (42.2, 60.5, 1.2), (61.7, 81.0, 1.6),
     ]
@@ -181,16 +128,12 @@ enum Piazza {
                 let p = c + outward * (half + 0.02) + SIMD3(0, 0, (r.z0 + r.z1) / 2)
                 parent.addChildNode(facade(face, campanileSide, h, at: p, azimuth: azimuth))
             }
-            // One box per cornice rather than four mitred ones: a square needs no mitre, and these
-            // are the horizontals the whole right-hand side of the picture is measured against.
             parent.addChildNode(slab(at: c + SIMD3(0, 0, r.z1 + r.cornice / 2),
                                      size: SIMD3(campanileSide + 1.6, campanileSide + 1.6,
                                                  r.cornice),
                                      trim))
         }
 
-        // Terrace at the top. It is 85 m up and almost never in frame, but when the lid tips back
-        // far enough the tower has to end in something.
         let last = campanileRegisters[campanileRegisters.count - 1]
         let parapetZ = last.z1 + last.cornice
         parent.addChildNode(slab(at: c + SIMD3(0, 0, (parapetZ + top) / 2),
@@ -207,8 +150,6 @@ enum Piazza {
         let apothem = baptisteryAcrossFlats / 2
         let side = 2 * apothem * tan(.pi / 8)
 
-        // Three-step stylobate, 30 m across the flats and 1.2 m proud. The steps are what tie the
-        // building to the ground; without them an octagon on a flat plane reads as a decal.
         let stepStone = paint(mix(Tex.Palette.carrara, Tex.Palette.ground, 0.35), roughness: 0.8)
         for step in [(apothem: 15.0, z0: 0.00, z1: 0.40, depth: 1.4),
                      (apothem: 14.3, z0: 0.40, z1: 0.80, depth: 1.0),
@@ -246,9 +187,6 @@ enum Piazza {
         parent.addChildNode(polyBand(centre: centre, sides: 8, apothem: apothem + 0.70,
                                      z0: cornice, z1: eaves, depth: 1.5, pale))
 
-        // Pyramidal roof, built by hand: SCNCone's 8-gon starts at an arbitrary azimuth, and a roof
-        // whose corners miss the cornice's corners is the first thing the eye notices. Truncated at
-        // the lantern floor so the lantern has something to stand on.
         let roof = polyRoof(centre: centre, sides: 8,
                             lower: (radius: (apothem + 0.75) / cos(.pi / 8), z: eaves),
                             upper: (radius: 2.6, z: lanternFloor),
@@ -268,7 +206,6 @@ enum Piazza {
                                      z0: lanternFloor + 2.0, z1: lanternFloor + 2.4,
                                      depth: 0.5, white))
 
-        // The tip lands on `baptisteryHeight` by construction, not by coincidence.
         let capHeight = baptisteryHeight - (lanternFloor + 2.4)
         let cap = SCNCone(topRadius: 0, bottomRadius: 2.8, height: capHeight)
         cap.radialSegmentCount = 8
@@ -292,17 +229,9 @@ enum Piazza {
 
     // MARK: - Santa Maria del Fiore
 
-    /// The cathedral the viewer has just walked out of: its west front 38 m off the station on the
-    /// side away from the Baptistery, its flank running up the right. It is not in the reflection
-    /// at rest and should not be — the subject is the Baptistery — so this is what a turn finds,
-    /// and the flank is what makes that turn continuous instead of a cut between two unrelated
-    /// pictures.
     private static func buildDuomo(into parent: SCNNode) {
         let marble = paint(mix(Tex.Palette.carrara, Tex.Palette.ground, 0.22), roughness: 0.78)
 
-        // Well back, because the mirror looks this way. At the old 9 m the facade filled the
-        // whole reflection with two bronze doors and there was no piazza left to see; at 38 m the
-        // full 48 m front stands in the frame with paving in front of it.
         let frontY = -38.0, frontWidth = 60.0, frontHeight = 48.0
         parent.addChildNode(slab(at: SIMD3(0, frontY - 2.5, frontHeight / 2),
                                  size: SIMD3(frontWidth, 5, frontHeight), marble))
@@ -313,9 +242,6 @@ enum Piazza {
                                    frontWidth, frontHeight,
                                    at: SIMD3(0, frontY + 0.04, frontHeight / 2), azimuth: .pi))
 
-        // Flank: x ∈ [26, 34], y ∈ [-40, 18], 40 m. Its base and cornice run 58 m straight away
-        // from the eye, which makes them the fastest-converging lines in the scene — a second
-        // family of orthogonals meeting the pavement's at the same point.
         let flankX = 26.0, flankDepth = 8.0
         let y0 = -40.0, y1 = 18.0, flankHeight = 40.0
         let length = y1 - y0, mid = (y0 + y1) / 2
@@ -337,25 +263,13 @@ enum Piazza {
     }
 
     // MARK: - flanking palazzi
-    //
-    // Their cornices and base courses are a second and third family of perspectival lines
-    // converging on the same vanishing point as the pavement, and that redundancy is what makes the
-    // perspective legible rather than merely correct. Heights vary block to block so the cornice
-    // line steps rather than running dead level — a stepped cornice still converges, and proves it
-    // was not drawn parallel to the panel edge by accident.
 
-    /// (length along the facade, height to the cornice). Both rows begin at y = -10 rather than at
-    /// the piazza proper: turned broadside, the panel looks straight down the x axis, and a row
-    /// starting level with the Baptistery leaves an open corner between the Duomo's front and the
-    /// first block — a hole in the enclosure exactly where the eye is closest to the wall.
-    /// Both rows run y ∈ [-10, 104], meeting the closing row at its own facade plane.
     private static let westBlocks: [(Double, Double)] = [
         (20, 20.0), (18, 18.5), (22, 22.5), (19, 16.8), (18, 20.2), (17, 23.4),
     ]
     private static let eastBlocks: [(Double, Double)] = [
         (20, 18.8), (20, 21.5), (16, 17.4), (23, 19.6), (18, 23.0), (17, 16.6),
     ]
-    /// The closing row behind the Baptistery, so the piazza is a room and not a void.
     private static let northBlocks: [(Double, Double)] = [
         (26, 19.5), (30, 23.5), (28, 20.5), (26, 22.0),
     ]
@@ -379,9 +293,6 @@ enum Piazza {
         }
     }
 
-    /// One block. `facadeCentre` is the midpoint of the facade plane at pavement level and
-    /// `azimuth` the compass angle of its outward normal, so the mass, the cornice and the roof all
-    /// follow from the one plane the eye actually sees.
     private static func buildPalazzo(into parent: SCNNode, facadeCentre c: SIMD3<Double>,
                                      azimuth: Double, width: Double, height: Double) {
         let depth = 16.0
@@ -416,18 +327,12 @@ enum Piazza {
                                  paint(mix(Tex.Palette.stucco, Tex.Palette.ground, 0.5),
                                        roughness: 0.9),
                                  spin: spin))
-        // Tile roof. Seen from below it is an edge, not a surface, so a band above the cornice is
-        // all of it that is ever visible — and the warm line it puts along every skyline is the
-        // point.
         parent.addChildNode(slab(at: c - out * (depth / 2) + SIMD3(0, 0, height + 0.45),
                                  size: SIMD3(width + 1.2, depth + 1.2, 0.9),
                                  paint(Tex.Palette.roofTile, roughness: 0.85), spin: spin))
     }
 
     // MARK: - mid-ground furniture
-    //
-    // The 15-to-40 m band was empty pavement in the first version, and an empty middle distance is
-    // exactly what makes a rendered ground plane read as a surface rather than as receding space.
 
     private static func buildFurniture(into parent: SCNNode) {
         // Granite column with a bronze figure, 23 m out and directly in front of the campanile's
@@ -438,21 +343,13 @@ enum Piazza {
 
         let well = Furniture.wellhead()
         well.simdPosition = float3(SIMD3(-6, 34, 0))
-        // Skewed off the paving grid: real street furniture never lines up with it, and a wellhead
-        // square to the orthogonals reads as part of the construction rather than as an object.
         well.simdOrientation = simd_quatf(angle: 0.36, axis: SIMD3(0, 0, 1))
         parent.addChildNode(well)
 
-        // Kerb ring around the Baptistery. It crosses in front of the stylobate at r = 21, which
-        // puts a hard elliptical edge between the eye and the steps: the cheapest depth cue there
-        // is, and the pavement's own grid stops at y = 55 so the two never collide.
         let kerb = Furniture.kerbRing(radius: 21, count: 24)
         kerb.simdPosition = float3(SIMD3(0, baptisteryDistance, 0))
         parent.addChildNode(kerb)
 
-        // A second, shorter column out to the west. Without it, turning left found nothing but
-        // pavement and a distant facade — the same flat tableau the whole rebuild is against, just
-        // pointed 40 degrees the other way.
         let westColumn = Furniture.column(height: 8.5)
         westColumn.simdPosition = float3(SIMD3(-17, 15, 0))
         parent.addChildNode(westColumn)
@@ -465,12 +362,6 @@ enum Piazza {
         parent.addChildNode(flight)
     }
 
-    /// The sun as an object, not as paint on the sky.
-    ///
-    /// The background cube is sampled by the true view direction, so it does not reflect: painted
-    /// there, the sun would sit in the wrong half of a mirror, which is fatal when the sun is the
-    /// thing being watched. As geometry under the world node it reflects with everything else, and
-    /// the drawn bloom then lands on it by construction rather than by agreement.
     private static func buildSun(into parent: SCNNode) {
         let d = 350.0
         let disc = SCNSphere(radius: 6.1)   // ~2 degrees across: a truthful half-degree only aliases
@@ -489,10 +380,6 @@ enum Piazza {
 
     // MARK: - light
 
-    /// From the piazza up at the sun: unit, piazza frame. Late morning, well round to the west and
-    /// low enough that the campanile lays thirty-odd metres of shadow back across the pavement.
-    /// Lower than it was — a high sun puts every shadow under its own building, which is exactly
-    /// the flat, placeless light the scene had. The sky is painted from this same vector.
     static let sunDirection = simd_normalize(SIMD3<Double>(-0.78, 0.20, 0.59))
 
 
@@ -505,25 +392,13 @@ enum Piazza {
         sun.shadowMapSize = CGSize(width: 2048, height: 2048)
         sun.shadowSampleCount = 16
         sun.shadowRadius = 2
-        // Nearly opaque, and measured rather than guessed: with the ambient and the sky fill both
-        // lighting the shadowed pavement, anything under ~0.85 leaves the cast shadows at a few
-        // percent of contrast and the piazza reads as flat-lit.
         sun.shadowColor = NSColor(srgbRed: 0.17, green: 0.17, blue: 0.22, alpha: 0.88)
-        // Without this the shadow projection is fitted automatically and the settings below are
-        // ignored, which at piazza scale means a shadow map spread over kilometres.
         sun.automaticallyAdjustsShadowProjection = false
         sun.orthographicScale = 160
         sun.zNear = 1
         sun.zFar = 500
         let sunNode = SCNNode()
         sunNode.light = sun
-        // Late morning: high, well to the left, and a little beyond the campanile, so the tower
-        // throws 30-odd metres of shadow back across the pavement toward the viewer. The +Y
-        // component is kept small on purpose — push it and the Baptistery's near face, the one
-        // face the whole building was oriented to present, falls entirely into shade.
-        // Parked far enough out along the sun's own direction that the whole square is inside the
-        // shadow frustum. A directional light takes only its orientation from this, not its
-        // distance, but the shadow projection is built around the node.
         let aim = SIMD3<Double>(4, 46, 0)
         sunNode.simdPosition = float3(aim + sunDirection * 190)
         sunNode.look(at: SCNVector3(Float(aim.x), Float(aim.y), Float(aim.z)),
@@ -532,9 +407,6 @@ enum Piazza {
 
         let sky = SCNLight()
         sky.type = .ambient
-        // Warm, not blue. The previous scene's ambient was sky-coloured, which left every surface
-        // facing away from the sun a cold grey and made painted stone read as plastic; bounced
-        // light in a paved Italian square comes off the pavement, and the pavement is ochre.
         sky.color = NSColor(srgbRed: 0.93, green: 0.87, blue: 0.75, alpha: 1)
         sky.intensity = 300
         let skyNode = SCNNode()
@@ -559,24 +431,16 @@ enum Piazza {
         return node
     }
 
-    /// The one definition of "which way is out": the horizontal unit normal at compass angle
-    /// `azimuth`, where 0 points -Y, back toward the viewing station. Every wall in this file is
-    /// placed by an azimuth and this function, so a facade and the cornice over it cannot disagree.
     private static func outwardNormal(_ azimuth: Double) -> SIMD3<Double> {
         SIMD3(sin(azimuth), -cos(azimuth), 0)
     }
 
-    /// Face `k` of a regular `sides`-gon standing on the pavement. Face 0 always looks back at the
-    /// viewing station, which is why the Baptistery presents a flat face square-on and the
-    /// campanile a flat side.
     private static func polyFace(_ k: Int, sides: Int) -> (azimuth: Double,
                                                            outward: SIMD3<Double>) {
         let a = 2 * Double.pi * Double(k) / Double(max(1, sides))
         return (a, outwardNormal(a))
     }
 
-    /// Corner `k` of the same polygon — halfway in azimuth between faces k-1 and k. `radius` is the
-    /// circumradius, not the apothem.
     private static func polyCorner(_ k: Int, sides: Int, radius: Double, centre: SIMD3<Double>,
                                    z: Double) -> SIMD3<Float> {
         let step = 2 * Double.pi / Double(max(1, sides))
@@ -584,17 +448,10 @@ enum Piazza {
         return float3(centre + SIMD3(sin(a) * radius, -cos(a) * radius, z - centre.z))
     }
 
-    /// One horizontal band of a regular prism — a step, a cornice — built face by face so its
-    /// corners line up with the revetment above it. `apothem` is the band's outer face distance and
-    /// it grows inward by `depth`.
     private static func polyBand(centre: SIMD3<Double>, sides: Int, apothem: Double,
                                  z0: Double, z1: Double, depth: Double,
                                  _ material: SCNMaterial) -> SCNNode {
         let group = SCNNode()
-        // Exactly the outer face's length, so consecutive boxes meet at the corner and no further.
-        // The inner edges then overlap into the neighbour, which is invisible — it is buried in
-        // the solid. Adding `depth` here instead, to close a mitre that was never open, overhangs
-        // each corner by depth/2 and gives every cornice, step and lantern band eight visible tabs.
         let side = 2 * apothem * tan(.pi / Double(max(3, sides)))
         for k in 0..<max(3, sides) {
             let (azimuth, outward) = polyFace(k, sides: sides)

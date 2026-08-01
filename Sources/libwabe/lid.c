@@ -12,7 +12,6 @@ static uint32_t lidReportID;
 static IOHIDReportType lidReportType;
 static double lidScale;
 
-// Read one candidate; returns the angle, or -1 if it did not answer plausibly.
 static double lidTry(IOHIDReportType type, uint32_t id, double scale) {
 	uint8_t buf[16] = {0};
 	CFIndex len = sizeof(buf);

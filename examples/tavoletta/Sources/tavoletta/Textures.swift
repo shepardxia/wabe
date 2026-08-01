@@ -1,14 +1,6 @@
 // The paint. Everything the demo shows is drawn here with Core Graphics — no image files, no
 // downloads, nothing to fetch.
 //
-// Division of labour with `Piazza`: textures carry the *fine* detail (marble inlay, window rows,
-// stucco grain), and geometry carries every line the perspective construction has to land on. A
-// line painted into a texture is only as straight as the mip filter, and this demo is an argument
-// about straightness.
-//
-// Contexts here are raw CGContexts, so the origin is bottom-left and y runs up — the same
-// convention as the overlay, and the same convention as the piazza's z. A facade texture is
-// therefore authored the way the wall stands: plinth at y = 0, cornice at y = height.
 import AppKit
 import simd
 
@@ -64,15 +56,9 @@ enum Tex {
                     case 4: s = SIMD3(u, -v, 1)
                     default: s = SIMD3(-u, -v, -1)
                     }
-                    // Measured, not assumed: SceneKit samples the cube left-handed, so face 4 is
-                    // what you see looking down and face 5 what you see looking up. Flipping z
-                    // takes the sampler's direction back to a world direction.
                     let d = simd_normalize(SIMD3(s.x, s.y, -s.z))
                     var c = skyColor(at: CGFloat((1 - d.z) / 2))
 
-                    // Disc and halo. The disc is drawn far larger than the sun's real half degree:
-                    // at this face resolution one texel already spans most of that, so a truthful
-                    // sun would alias into a flickering dot instead of reading as a light source.
                     let cosA = simd_dot(d, sun)
                     let halo = pow(max(0, cosA), 260) * 0.85 + pow(max(0, cosA), 14) * 0.10
                     let disc = cosA > cos(1.6 * .pi / 180) ? 1.0 : 0.0
@@ -90,9 +76,6 @@ enum Tex {
         }
     }
 
-    /// One face of the Baptistery's marble revetment: white ground inlaid with green Prato marble.
-    /// `tier` selects the register — 0 lower (pilasters + panels), 1 middle (blind arcade),
-    /// 2 attic (rectangular panels under the cornice).
     static func revetment(tier: Int, size: CGSize) -> NSImage {
         canvas(size) { ctx in
             let w = size.width, h = size.height
@@ -112,7 +95,6 @@ enum Tex {
                 for side in [0.045, 0.855] {
                     let r = CGRect(x: w * side, y: h * 0.10, width: w * 0.10, height: h * 0.78)
                     ctx.frame(r, green, lw)
-                    // Capital and base: without them the strip reads as a stripe, not a pilaster.
                     ctx.box(CGRect(x: r.minX - w * 0.012, y: r.maxY, width: r.width + w * 0.024,
                                    height: h * 0.045), green)
                     ctx.box(CGRect(x: r.minX - w * 0.008, y: r.minY - h * 0.028,
@@ -171,10 +153,6 @@ enum Tex {
         }
     }
 
-    /// One face of Giotto's campanile, `register` 0 to 3 going up: the Baptistery's revetment
-    /// vocabulary, opening out as it climbs — solid panels, an inlaid grid, a two-light window,
-    /// then a belfry that is mostly void. That progression is what keeps 85 m of square shaft from
-    /// reading as a painted post: the top is visibly lighter than the bottom, the way a tower is.
     static func campanile(register: Int, size: CGSize) -> NSImage {
         canvas(size) { ctx in
             let w = size.width, h = size.height
@@ -245,14 +223,11 @@ enum Tex {
                                 fill: Palette.recess,
                                 jambs: [(Palette.carrara, lw * 2.4), (green, lw)])
                 }
-                // The colonnette between the lights, which is what makes it one window and not two.
                 ctx.box(CGRect(x: field.midX - lw, y: field.minY,
                                width: lw * 2, height: field.height * 0.62),
                         mix(Palette.carrara, green, 0.25))
 
             default:
-                // Trifora belfry: three very tall lights, mostly void. This is the register the sky
-                // shows through, and the reason the top of the tower does not go dead against it.
                 for i in 0..<3 {
                     let cx = field.minX + field.width * (CGFloat(i) + 0.5) / 3
                     ctx.opening(archPath(cx: cx, base: field.minY + field.height * 0.04,
@@ -328,8 +303,6 @@ enum Tex {
         }
     }
 
-    /// The pavement's fine grain — a subtle stone mottle. The strong bands are real geometry, not
-    /// texture, so this must stay quiet.
     static func pavement(size: CGSize) -> NSImage {
         canvas(size) { ctx in
             ctx.box(CGRect(origin: .zero, size: size), Palette.ground)
@@ -347,8 +320,6 @@ enum Tex {
                                          colors: [c.withAlphaComponent(a).cgColor,
                                                   c.withAlphaComponent(0).cgColor] as CFArray,
                                          locations: [0, 1]) else { continue }
-                // Nine copies: the texture repeats every 4 m across the piazza, and a blob cut off
-                // at the edge would print a grid of seams straight down the pavement.
                 for dx in [-size.width, 0, size.width] {
                     for dy in [-size.height, 0, size.height] {
                         let q = CGPoint(x: p.x + dx, y: p.y + dy)
@@ -369,12 +340,6 @@ enum Tex {
         }
     }
 
-    /// The Duomo's west front, 60 m across and 48 m tall, at the viewer's back: banded white, green
-    /// and rose marble, three arched portals, a rose window over the middle one.
-    ///
-    /// Drawn for a wall the eye is 9 m from, so the openings are at cathedral scale — the middle
-    /// portal 9 m wide — rather than proportioned to the texture. Get that wrong and turning the
-    /// laptop around fills the panel with one black arch.
     static func duomoFacade(size: CGSize) -> NSImage {
         canvas(size) { ctx in
             let w = size.width, h = size.height
@@ -391,10 +356,6 @@ enum Tex {
                         mix(Palette.carrara, green, 0.22))
             }
 
-            // Portals: middle 8 m wide to 18 m tall, the flanking pair 6 m to 14 m. Each is filled
-            // with bronze leaves and a gilt lunette rather than left as a recess — the viewing
-            // station is 9 m from this wall, so a bare opening is not a detail in a facade, it is
-            // the entire picture the moment the laptop turns around.
             for p: (cx: CGFloat, half: CGFloat, top: CGFloat) in [(0.22, 0.046, 0.27),
                                                                   (0.50, 0.058, 0.35),
                                                                   (0.78, 0.046, 0.27)] {
@@ -437,10 +398,6 @@ enum Tex {
         }
     }
 
-    /// The Duomo's flank, 58 m long and 40 m tall, running away up the right-hand side of the
-    /// piazza: the same banded marble, buttress strips, one row of tall windows. Those strips march
-    /// away from the eye faster than anything else in the scene, so they are drawn crisp and the
-    /// wall is otherwise left plain.
     static func duomoFlank(size: CGSize) -> NSImage {
         canvas(size) { ctx in
             let w = size.width, h = size.height
@@ -491,8 +448,6 @@ enum Tex {
 /// off it by a few percent, which is enough to pull the green marble grey.
 private let srgb = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
 
-/// A bitmap-backed image at an exact pixel size. `NSImage(size:flipped:)` would defer drawing to
-/// whatever scale the consumer asks for; SceneKit textures want a decided number of pixels.
 private func canvas(_ size: CGSize, _ draw: (CGContext) -> Void) -> NSImage {
     let w = max(1, Int(size.width.rounded())), h = max(1, Int(size.height.rounded()))
     guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
@@ -507,9 +462,6 @@ private func canvas(_ size: CGSize, _ draw: (CGContext) -> Void) -> NSImage {
     return NSImage(cgImage: cg, size: NSSize(width: w, height: h))
 }
 
-/// A round-headed opening as one closed path: jambs from `base` up to the springing line, then a
-/// semicircle of radius `half` whose crown sits at `top`. Every arch in this file — portal, window,
-/// blind bay, belfry light — comes from here, so they are one shape at a dozen sizes.
 private func archPath(cx: CGFloat, base: CGFloat, top: CGFloat, half: CGFloat) -> CGPath {
     let spring = max(base, top - half)
     let p = CGMutablePath()
@@ -523,9 +475,6 @@ private func archPath(cx: CGFloat, base: CGFloat, top: CGFloat, half: CGFloat) -
     return p
 }
 
-/// What fills a portal: two bronze leaves of raised panels below the springing line, a gilt lunette
-/// in the head above it. A door is a plane of relief, not a hole, and the difference only shows up
-/// at close range — which is exactly where this wall is used.
 private func doorway(_ ctx: CGContext, cx: CGFloat, base: CGFloat, top: CGFloat, half: CGFloat) {
     let spring = max(base, top - half)
     let jamb = half * 0.06
@@ -549,12 +498,9 @@ private func doorway(_ ctx: CGContext, cx: CGFloat, base: CGFloat, top: CGFloat,
             }
         }
     }
-    // The meeting stile, so two leaves read as two and not as one dark field.
     ctx.box(CGRect(x: cx - jamb, y: base, width: jamb * 2, height: spring - base),
             mix(Tex.Palette.bronze, Tex.Palette.gilt, 0.45))
 
-    // Lunette: gold mosaic in the head of the arch. The one bright thing on an otherwise cold
-    // wall, and what the eye lands on when the laptop comes all the way around.
     ctx.saveGState()
     ctx.addPath(archPath(cx: cx, base: spring, top: top, half: half))
     ctx.clip()
@@ -567,9 +513,6 @@ private func doorway(_ ctx: CGContext, cx: CGFloat, base: CGFloat, top: CGFloat,
     ctx.restoreGState()
 }
 
-/// Horizontal marble courses: the Duomo's banded revetment, `count` bands over the full height,
-/// each a wide green stripe with a thin rose one riding on top of it. One routine, so the facade
-/// and the flank band at the same rhythm and read as the same building seen from two sides.
 private func courses(_ ctx: CGContext, _ size: CGSize, count: Int) {
     let n = max(1, count)
     let band = size.height / CGFloat(n)
@@ -593,8 +536,6 @@ private extension CGContext {
         stroke(r.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
     }
 
-    /// Fill an opening and mould its jamb. `jambs` is given outermost first, so a wide pale stroke
-    /// followed by a narrow dark one reads as a stepped reveal rather than as an outline.
     func opening(_ path: CGPath, fill: NSColor, jambs: [(NSColor, CGFloat)] = []) {
         saveGState()
         setLineJoin(.round)
@@ -671,8 +612,6 @@ private func bitmap(_ rgbx: [UInt8], _ n: Int) -> NSImage? {
     return NSImage(cgImage: cg, size: NSSize(width: n, height: n))
 }
 
-/// Position 0 is the zenith, 0.5 the horizon, 1 straight down. The one description of the sky:
-/// Toward `to`, by `t`. Saturating, so a hot sun core cannot wrap a channel back to black.
 private func blend(_ a: UInt8, _ to: Double, _ t: Double) -> UInt8 {
     UInt8(max(0, min(255, Double(a) + (to - Double(a)) * t)))
 }
@@ -685,9 +624,6 @@ private let skyStops: [(CGFloat, NSColor)] = [
     (1.00, mix(Tex.Palette.skyHorizon, Tex.Palette.ground, 0.60)),
 ]
 
-/// The stops with their components already in sRGB. `skyColor` is called once per texel of every
-/// cube face, and the cube is built twice, so converting the colour space inside it meant about
-/// 1.6 million conversions of these same four values: 85% of the scene's entire build time.
 private let skyRamp: [(CGFloat, (CGFloat, CGFloat, CGFloat))] = skyStops.map { stop in
     let c = stop.1.usingColorSpace(.sRGB) ?? stop.1
     return (stop.0, (c.redComponent, c.greenComponent, c.blueComponent))
@@ -709,8 +645,6 @@ private func skyColor(at position: CGFloat) -> (UInt8, UInt8, UInt8) {
 }
 
 
-/// Faint drifting veins over white marble. Marble at 70 m is a shading gradient, not a pattern —
-/// anything stronger than this reads as dirt.
 private func veining(_ ctx: CGContext, _ size: CGSize, seed: UInt64) {
     var rng = Seeded(seed)
     ctx.saveGState()
@@ -734,7 +668,6 @@ private func veining(_ ctx: CGContext, _ size: CGSize, seed: UInt64) {
     ctx.restoreGState()
 }
 
-/// Broad soft blotches: stucco is never one colour, and a flat facade at 30 m looks like plastic.
 private func grain(_ ctx: CGContext, _ size: CGSize, seed: UInt64) {
     var rng = Seeded(0x57DCC0 &+ seed)
     let cs = srgb

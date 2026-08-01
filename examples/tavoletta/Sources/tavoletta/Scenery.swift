@@ -1,10 +1,6 @@
 // The handful of things every piece of the scene needs: a material, a colour blend, a mesh, and
 // the rotation that stands a SceneKit primitive up in a Z-up world.
 //
-// These lived three times over — once in Piazza, once in Furniture, once (for colour) in Textures
-// and Overlay — because those files were written in parallel against one spec and none of them was
-// allowed to reach into the others. The copies had already drifted: two different `recess` values
-// under the same name, and the same Double-to-Float converter under two names.
 import AppKit
 import SceneKit
 import simd
@@ -50,9 +46,6 @@ func stone(_ image: NSImage, roughness: CGFloat) -> SCNMaterial {
     return m
 }
 
-/// Flat-shaded polygon soup, fanned into triangles that each keep their own vertices and face
-/// normal — what stone wants: a visible break at every arris, and no shared vertices to smooth one
-/// away. Faces of any vertex count; a triangle is just the three-vertex case.
 func flatMesh(_ faces: [[SIMD3<Float>]], _ material: SCNMaterial) -> SCNGeometry {
     var vertices: [SCNVector3] = [], normals: [SCNVector3] = [], indices: [Int32] = []
     for face in faces where face.count >= 3 {

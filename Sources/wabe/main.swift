@@ -1,17 +1,6 @@
 import Darwin
 import Foundation
 
-// wabe — control surface for the daemon.
-//
-//   wabe watch [--raw]     stream poses, pretty or raw JSON
-//   wabe recenter          zero the relative heading
-//   wabe status            is the service up, and what is it reporting
-//   wabe install           install + start the launchd agent (per-user, no root)
-//   wabe uninstall         stop + remove it
-//
-// The demo is not here: it is a separate package, run from a checkout with `make demo`.
-//
-// Global: --sock <path> (default /tmp/wabe.sock)
 
 let LABEL = "dev.wabe.wabed"
 let home = FileManager.default.homeDirectoryForCurrentUser
@@ -97,8 +86,6 @@ struct Pose: Decodable {
     var angles: String {
         String(format: "roll %+7.2f°  pitch %+7.2f°  yaw %+7.2f°", rpy[0], rpy[1], rpy[2])
     }
-    /// Machines without a hinge encoder publish a negative angle; say so once instead of
-    /// printing -1.00 forever.
     var hinge: String { lid < 0 ? "  (no hinge encoder)" : String(format: "  lid %6.2f°", lid) }
 }
 
@@ -155,10 +142,6 @@ func agentLoaded() -> Bool {
 func doInstall() {
     let here = URL(fileURLWithPath: CommandLine.arguments[0])
         .resolvingSymlinksInPath().deletingLastPathComponent()
-    // Whoever builds the daemon names it: `make` passes --daemon build/wabed, and on its own this
-    // installs the copy beside itself, which is what re-running an installed `wabe install` means.
-    // Never searched relative to the working directory — that would let the daemon under launchd
-    // depend on where the command happened to be typed.
     let built = daemonPath.map { URL(fileURLWithPath: $0) } ?? here.appendingPathComponent("wabed")
     guard FileManager.default.fileExists(atPath: built.path) else {
         FileHandle.standardError.write(Data(
@@ -169,8 +152,6 @@ func doInstall() {
     try? FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(at: plistPath.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
-    // Install the daemon and this control binary together — `wabe status` after `wabe install`
-    // should work from anywhere, not only from the build directory.
     let toInstall = [(built, installedDaemon), (here.appendingPathComponent("wabe"), installedCLI)]
     for (src, dst) in toInstall {
         guard FileManager.default.fileExists(atPath: src.path) else { continue }
@@ -183,9 +164,6 @@ func doInstall() {
         }
     }
 
-    // KeepAlive restarts the daemon if the accel stream is dead beyond its own re-exec budget.
-    // No ProcessType key: "Background" throttles CPU/IO hard enough to drop the 30 Hz publish
-    // rate to ~17 Hz (measured), and the default (Standard) does not.
     let plist = """
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -218,7 +196,6 @@ func doInstall() {
         exit(1)
     }
 
-    // Wait for the socket rather than claiming success on launchctl's word.
     for _ in 0..<50 {
         if let fd = connectToDaemon() {
             close(fd)
@@ -256,8 +233,6 @@ func doStatus() {
     print("agent    \(loaded ? "loaded" : "not installed")  (\(LABEL))")
     guard let fd = connectToDaemon() else {
         print("socket   \(sockPath): not responding")
-        // Loaded-but-silent is a crashing daemon, not a missing install, and re-installing
-        // will not fix it.
         if loaded {
             print("\nthe agent is loaded but nothing is answering, so the daemon is failing to start.")
             print("see \(logPath.path)")
@@ -282,8 +257,6 @@ func doStatus() {
     }
     let hz = Double(count - 1) / max(1e-6, p.t - t0)
     print("socket   \(sockPath): \(String(format: "%.0f", hz)) Hz")
-    // The hinge encoder is a separate part from the IMU and some machines lack it, in which
-    // case orientation still works and the screen normal does not.
     if p.lid < 0 { print("hinge    absent on this machine: no screen normal") }
     print("pose     " + p.angles + p.hinge + (p.stat ? "  at rest" : "  moving"))
 }
