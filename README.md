@@ -6,7 +6,9 @@ macOS 13+ on an Apple Silicon MacBook. No root.
 
 ## Demo
 
-![The piazza holding still in the room while the laptop moves around it](demo.gif)
+<p align="center">
+  <img src="demo.gif" alt="The piazza holding still in the room while the laptop moves around it">
+</p>
 
 ```bash
 make demo       # l: lines · r: recenter · [ ]: eye distance · q: quit
