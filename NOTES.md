@@ -79,6 +79,32 @@ Do not try to gate this on the IMU's `at_rest` flag instead. Measured, it reads 
 seconds at a time while the lid is provably stationary on a desk, so it would unfreeze constantly.
 The evidence has to come from the encoder itself.
 
+**Do not extrapolate the lid.** An α-β tracker running ahead of the newest anchor was the design
+until 2026-08-02, and no gain setting fixes it, because the defect is the shape and not the
+numbers. Everything such a filter publishes between anchors is invented, and a friction hinge
+stops dead, so at every release the filter is still moving and has to double back. Measured at the
+30 Hz the daemon publishes, on a 40 °/s pivot released abruptly: 6 direction changes after the
+hinge was already still, 604 ms to settle, 9.3° of travel across ground the lid never covered, and
+a steady-motion rate ranging 19.7–64.0 °/s against a true 40. Tuning moved those numbers and could
+not zero them — nothing in an extrapolator is bounded by an encoder period.
+
+The reconstruction interpolates instead, one period behind, between the two anchors bracketing the
+output time, with Fritsch–Carlson limited slopes so the cubic cannot leave the interval it spans.
+Overshoot, invented travel, direction reversals and lead over the encoder are then zero by
+construction rather than small by tuning, and `probes/lidfilter.c` asserts them as zero. Steady
+rate came to 38.3–43.2 °/s. The price is stated where it is paid: the output reaches an angle one
+encoder period after the hinge does, 100 ms, and the probe asserts it is one period and not two.
+
+Two traps worth keeping, both of which cost real time here:
+
+- A residual inside the noise gate means the *prediction was good*, which a tracked hinge produces
+  as readily as a still one. The old filter read it as evidence of rest and zeroed its rate, so
+  the estimate was destroyed every time tracking succeeded: on a steady 40 °/s pivot the next
+  prediction then missed by a full period of travel and the output stalled to 7.6 °/s before
+  leaping to 85.5 °/s, three times a second.
+- A smoothstepped test pivot hides all of it, because it never stops abruptly. The dead stop in
+  `probes/lidfilter.c` is what letting go of a friction hinge actually is.
+
 ## The accelerometer stall
 
 The accelerometer input stream fails to start on roughly 40% of opens: `IOHIDDeviceOpen`

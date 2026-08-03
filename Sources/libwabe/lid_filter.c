@@ -1,27 +1,33 @@
-// Reconstructs the lid angle between hinge samples. Alpha-beta tracker extrapolating to the read
-// time, then a one-pole stage. Gains are Kalata's tracking index (IEEE Trans. AES-20, 1984) for
-// sigma_w 0.031 deg, sigma_a 50 deg/s^2, T = WABE_LID_PERIOD. Measurements in NOTES.md.
+// Reconstructs the lid angle between hinge samples. Measurements in NOTES.md.
+//
+// The encoder is exact and slow: it hands over the true angle every WABE_LID_PERIOD and says
+// nothing in between. Anything published ahead of the newest anchor is therefore invented, and a
+// friction hinge punishes that — it stops dead, so an extrapolator is always still moving when the
+// lid already stopped, and has to double back. So this does not extrapolate. It runs one period
+// behind and interpolates between the two anchors bracketing the output time, which bounds the
+// output inside two measured values by construction: it cannot overrun a stop, cannot reverse
+// direction the hinge did not reverse, and holds no state that outlives the anchors it came from.
+//
+// The cost is stated plainly: the output reaches an angle one encoder period after the hinge does.
 #include "internal.h"
 
 #include <math.h>
 
-#define LID_ALPHA 0.99
-#define LID_BETA 1.62
-#define LID_HORIZON (1.5 * WABE_LID_PERIOD)
-#define LID_TAU 0.050
-// Fraction of the tracked rate the output rides. The one number here to change for feel.
-#define LID_VTRUST 0.65
+/// How far behind the reconstruction runs. One period is the minimum that always has an anchor on
+/// both sides of the output time; less than that is extrapolation wearing a different name.
+#define LID_DELAY WABE_LID_PERIOD
 
 // Measured encoder noise at rest: white, sigma 0.036 deg.
 #define LID_SIGMA 0.0364
 #define LID_GATE (3 * LID_SIGMA)
-// Position correction surviving inside the gate, tracking a settling hinge.
+/// Anchor correction surviving inside the gate, tracking a hinge settling too slowly to clear it.
 #define LID_CREEP 0.02
 
-/// Belief that a residual means motion: zero inside the noise floor, full past twice it.
-static double credence(double residual)
+/// Belief that a change between anchors is motion: zero inside the noise floor, full past twice
+/// it. Denoising happens here, on the anchors, so that the span between them stays exact.
+static double credence(double change)
 {
-    const double a = fabs(residual);
+    const double a = fabs(change);
     if (a <= LID_GATE)
         return 0.0;
     if (a >= 2 * LID_GATE)
@@ -29,57 +35,96 @@ static double credence(double residual)
     return (a - LID_GATE) / LID_GATE;
 }
 
+/// Slope at an anchor with a measured neighbour on each side, limited so the cubic through them
+/// cannot leave the interval: an extremum flattens, and no slope exceeds three times the smaller
+/// secant. Fritsch and Carlson, SIAM J. Numer. Anal. 17 (1980).
+static double slope(double back, double fwd, double h_back, double h_fwd)
+{
+    if (back * fwd <= 0)
+        return 0.0;
+    const double w_back = 2 * h_fwd + h_back;
+    const double w_fwd = h_fwd + 2 * h_back;
+    return (w_back + w_fwd) / (w_back / back + w_fwd / fwd);
+}
+
 void wabe_lid_filter_reset(wabe_lid_filter *f)
 {
-    f->primed = 0;
-    f->x = f->v = 0;
-    f->t = f->ty = 0;
-    f->y = 0;
+    f->n = 0;
     f->last_raw = -1;
+    for (int i = 0; i < WABE_LID_ANCHORS; i++)
+        f->t[i] = f->a[i] = 0;
 }
 
 void wabe_lid_filter_push(wabe_lid_filter *f, double deg, double now)
 {
     if (deg < 0)
         return;
-    if (!f->primed) {
-        f->primed = 1;
-        f->x = f->y = deg;
-        f->v = 0;
-        f->t = f->ty = now;
+    if (f->n == 0) {
+        f->t[0] = now;
+        f->a[0] = deg;
+        f->n = 1;
         f->last_raw = deg;
         return;
     }
-    // Correct on a changed reading, or when the grid says one was due.
-    const double dt = now - f->t;
-    if (deg == f->last_raw && dt < WABE_LID_PERIOD)
+    // A repeated reading is not a new anchor until the grid says one was due; at rest the encoder
+    // can sit on a value indefinitely, and the reconstruction still needs anchors to span.
+    if (deg == f->last_raw && now - f->t[0] < WABE_LID_PERIOD)
+        return;
+    if (now <= f->t[0])
         return;
     f->last_raw = deg;
-    if (dt <= 0)
-        return;
 
-    const double predicted = f->x + f->v * dt;
-    const double residual = deg - predicted;
-    const double w = credence(residual);
-    f->x = predicted + LID_ALPHA * (LID_CREEP + (1 - LID_CREEP) * w) * residual;
-    f->v = w > 0 ? f->v + (LID_BETA / dt) * w * residual : 0;
-    f->t = now;
+    // At rest successive readings differ by noise, and interpolating through that would publish
+    // it. Past the gate the reading is taken exactly, so a real pivot lands on its measured angle.
+    const double change = deg - f->a[0];
+    const double w = credence(change);
+    const double anchor = f->a[0] + (LID_CREEP + (1 - LID_CREEP) * w) * change;
+
+    for (int i = WABE_LID_ANCHORS - 1; i > 0; i--) {
+        f->t[i] = f->t[i - 1];
+        f->a[i] = f->a[i - 1];
+    }
+    f->t[0] = now;
+    f->a[0] = anchor;
+    if (f->n < WABE_LID_ANCHORS)
+        f->n++;
 }
 
-double wabe_lid_filter_value(wabe_lid_filter *f, double now)
+double wabe_lid_filter_value(const wabe_lid_filter *f, double now)
 {
-    if (!f->primed)
+    if (f->n == 0)
         return -1;
-    const double ahead = now - f->t;
-    const double horizon = ahead < LID_HORIZON ? (ahead > 0 ? ahead : 0) : LID_HORIZON;
-    const double raw = f->x + f->v * LID_VTRUST * horizon;
+    const double target = now - LID_DELAY;
+    // Outside the measured span there is nothing to interpolate, so hold the endpoint. Holding is
+    // the only honest answer here and the reason the output can never lead the hinge.
+    if (f->n == 1 || target >= f->t[0])
+        return f->a[0];
+    if (target <= f->t[f->n - 1])
+        return f->a[f->n - 1];
 
-    double step = now - f->ty;
-    if (step <= 0)
-        return f->y;
-    if (step > 0.25)
-        step = 0.25;
-    f->y += (1.0 - exp(-step / LID_TAU)) * (raw - f->y);
-    f->ty = now;
-    return f->y;
+    int j = 0;  // target lies in [t[j+1], t[j]]
+    while (j + 1 < f->n - 1 && target < f->t[j + 1])
+        j++;
+
+    const double h = f->t[j] - f->t[j + 1];
+    if (h <= 0)
+        return f->a[j];
+    const double d = (f->a[j] - f->a[j + 1]) / h;
+
+    // Centred slopes wherever a third anchor exists on that side; at the newest anchor none does,
+    // and the span's own secant is the estimate that cannot overshoot.
+    double m_new = d, m_old = d;
+    if (j > 0) {
+        const double h_new = f->t[j - 1] - f->t[j];
+        m_new = slope(d, (f->a[j - 1] - f->a[j]) / h_new, h, h_new);
+    }
+    if (j + 2 < f->n) {
+        const double h_old = f->t[j + 1] - f->t[j + 2];
+        m_old = slope((f->a[j + 1] - f->a[j + 2]) / h_old, d, h_old, h);
+    }
+
+    const double u = (target - f->t[j + 1]) / h;
+    const double u2 = u * u, u3 = u2 * u;
+    return f->a[j + 1] * (2 * u3 - 3 * u2 + 1) + f->a[j] * (-2 * u3 + 3 * u2)
+           + m_old * h * (u3 - 2 * u2 + u) + m_new * h * (u3 - u2);
 }

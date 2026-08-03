@@ -30,6 +30,10 @@ typedef struct {
 // rate takes it from here.
 #define WABE_DEFAULT_SENSOR_HZ 795
 
+// Rate the daemon publishes at, and so the rate any consumer sees the estimate change: anything
+// judging how the output looks has to be measured here, not at the sensor rate.
+#define WABE_DEFAULT_PUBLISH_HZ 30
+
 typedef struct {
     int sensor_hz;           // 0 -> WABE_DEFAULT_SENSOR_HZ
     const char *record_path; // NULL -> no capture; else raw samples written as JSONL
@@ -75,7 +79,7 @@ void wabe_stop(wabe *w);
 
 typedef struct {
     wabe_options sensors;
-    double publish_hz;       // 0 -> 30
+    double publish_hz;       // 0 -> WABE_DEFAULT_PUBLISH_HZ
     const char *socket_path; // NULL -> /tmp/wabe.sock
 } wabe_service;
 

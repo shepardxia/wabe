@@ -12,18 +12,24 @@
 /// everything that models the lid in time is pinned to it. See NOTES.md for the measurement.
 #define WABE_LID_PERIOD 0.1005
 
+/// Anchors kept for the reconstruction. Four is what a centred slope at both ends of the
+/// interpolated span needs, and holding more would only be state the output cannot reach.
+#define WABE_LID_ANCHORS 4
+
 /// Reconstructs the lid angle between hinge samples; see lid_filter.c for why it has to.
 typedef struct {
-    double x, v;      // angle (deg) and rate (deg/s), the tracker's state
-    double t;         // time of the last correction
-    double y, ty;     // output stage and its clock
-    double last_raw;  // last reading accepted, to tell a fresh sample from a repeated poll
-    int primed;
+    double t[WABE_LID_ANCHORS];  // sample times, newest first
+    double a[WABE_LID_ANCHORS];  // angles at those times, denoised
+    int n;                       // anchors held, saturating at WABE_LID_ANCHORS
+    double last_raw;             // last reading accepted, to tell a fresh sample from a repeat
 } wabe_lid_filter;
 
 void wabe_lid_filter_reset(wabe_lid_filter *f);
 void wabe_lid_filter_push(wabe_lid_filter *f, double deg, double now);
-double wabe_lid_filter_value(wabe_lid_filter *f, double now);
+
+/// Angle at `now`, which the reconstruction reaches one encoder period after the hinge did. Pure:
+/// the reading does not depend on how often it is taken.
+double wabe_lid_filter_value(const wabe_lid_filter *f, double now);
 
 struct wabe {
     wvqf *vqf;

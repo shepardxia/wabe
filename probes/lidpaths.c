@@ -1,6 +1,8 @@
-// Which lid-angle access paths does this machine answer on?
+// Which lid-angle access paths does this machine answer on? libwabe walks the same table
+// (Sources/libwabe/lid_reports.h) and takes the first plausible entry.
 //
-// libwabe walks the same table (Sources/libwabe/lid_reports.h) and takes the first plausible
+//   clang -O2 -o lidpaths probes/lidpaths.c Sources/libwabe/hid.c \
+//       -framework IOKit -framework CoreFoundation
 #include "../Sources/libwabe/hid.h"
 #include "../Sources/libwabe/lid_reports.h"
 

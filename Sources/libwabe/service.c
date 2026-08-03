@@ -40,7 +40,7 @@ int wabe_serve(const wabe_service *cfg)
     // fails on, and the next send() raises SIGPIPE (observed: `wabe recenter` == exit 141).
     signal(SIGPIPE, SIG_IGN);
 
-    const double publish_hz = cfg && cfg->publish_hz > 0 ? cfg->publish_hz : 30;
+    const double publish_hz = cfg && cfg->publish_hz > 0 ? cfg->publish_hz : WABE_DEFAULT_PUBLISH_HZ;
     const char *sock_path = cfg && cfg->socket_path ? cfg->socket_path : "/tmp/wabe.sock";
 
     int err = WABE_OK;
