@@ -44,12 +44,11 @@ FULL = [
 ]
 
 
-def wabed_path():
-    for build in ("release", "debug"):
-        p = f"{REPO}/.build/{build}/wabed"
-        if os.path.exists(p):
-            return p
-    sys.exit("wabed not built — run `swift build -c release` first")
+def wabe_path():
+    p = f"{REPO}/build/wabe"
+    if not os.path.exists(p):
+        sys.exit("build/wabe missing — run `make` first")
+    return p
 
 
 def main():
@@ -62,7 +61,7 @@ def main():
     protocol = FULL if args.full else QUICK
     total = sum(s for _, _, s in protocol if s)
     cap = f"{OUTDIR}/{args.name}.jsonl"
-    wabed = wabed_path()
+    wabe = wabe_path()
 
     def say(text):
         print(f"\n>>> {text}", flush=True)
@@ -80,13 +79,13 @@ def main():
     input("Enter to start... ")
 
     os.makedirs(OUTDIR, exist_ok=True)
-    subprocess.run(["pkill", "-f", "wabed"], capture_output=True, check=False)
+    subprocess.run(["pkill", "-f", "wabe serve"], capture_output=True, check=False)
     time.sleep(1)
-    log = open(f"{OUTDIR}/{args.name}-wabed.log", "a")
-    subprocess.Popen([wabed, "--record", cap], stdout=log, stderr=log, start_new_session=True)
+    log = open(f"{OUTDIR}/{args.name}-wabe.log", "a")
+    subprocess.Popen([wabe, "serve", "--record", cap], stdout=log, stderr=log, start_new_session=True)
     time.sleep(3)
     if not os.path.exists(cap) or os.path.getsize(cap) < 10_000:
-        sys.exit(f"the daemon recorded nothing — see {OUTDIR}/{args.name}-wabed.log")
+        sys.exit(f"the daemon recorded nothing — see {OUTDIR}/{args.name}-wabe.log")
 
     marks = open(f"{OUTDIR}/{args.name}-markers.jsonl", "w", buffering=1)
     try:
@@ -103,13 +102,13 @@ def main():
                                 "mono": time.clock_gettime(time.CLOCK_MONOTONIC)}) + "\n")
     finally:
         marks.close()
-        subprocess.run(["pkill", "-f", "wabed"], capture_output=True, check=False)
+        subprocess.run(["pkill", "-f", "wabe serve"], capture_output=True, check=False)
         time.sleep(1)
-        subprocess.Popen([wabed], stdout=log, stderr=log, start_new_session=True)
+        subprocess.Popen([wabe, "serve"], stdout=log, stderr=log, start_new_session=True)
 
     subprocess.run(["gzip", "-kf", cap], check=True)
     print(f"\ncaptured {os.path.getsize(cap) / 1e6:.1f} MB -> {cap}")
-    print(f"replay it:  swift run wabe-replay {cap}.gz")
+    print(f"replay it:  make replay && swift run wabe-replay {cap}.gz")
 
 
 if __name__ == "__main__":

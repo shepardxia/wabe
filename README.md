@@ -4,17 +4,6 @@
 
 macOS 13+ on an Apple Silicon MacBook. No root.
 
-## Install
-
-```bash
-make            # library and daemon: C, no Swift toolchain needed
-make install    # launchd agent, starts at login, runs as you
-```
-
-`./build/wabed` runs it in the foreground if you would rather not install anything. `make install`
-puts the daemon and the control CLI in `~/.local/bin`: `wabe status`, `wabe watch`,
-`wabe recenter`, `wabe uninstall`.
-
 ## Demo
 
 ![The piazza holding still in the room while the laptop moves around it](demo.gif)
@@ -23,13 +12,30 @@ puts the daemon and the control CLI in `~/.local/bin`: `wabe status`, `wabe watc
 make demo       # l: lines · r: recenter · [ ]: eye distance · q: quit
 ```
 
-Your screen as a mirror of Piazza del Duomo, after Brunelleschi's 1425 demonstration. Turn a
-mirror one degree and the reflected ray turns two, so the piazza sweeps at twice the rate the lid
-moves.
+Turn your screen into a mirror against Florence Baptistery, after Brunelleschi's [1425
+demonstration](https://en.wikipedia.org/wiki/Filippo_Brunelleschi#Linear_perspective).
+
+## Install
+
+```bash
+make            # build/wabe, one binary, C only
+make install    # run it at login
+```
+
+```
+wabe                     agent, rate, current orientation
+wabe watch [--raw]       live readout
+wabe recenter            zero the heading
+wabe install             run at login, no root
+wabe uninstall           stop and remove
+wabe serve [options]     daemon in the foreground
+```
+
+`wabe` names the binary the daemon is actually running, so a rebuild you forgot to install says so.
 
 ## Usage
 
-`wabed` publishes newline JSON on `/tmp/wabe.sock`. Write `recenter\n` to zero your heading, or
+`wabe serve` publishes newline JSON on `/tmp/wabe.sock`. Write `recenter\n` to zero your heading, or
 `rate 60\n` to set your update rate (30 Hz default, 200 Hz cap). Each connection keeps its own.
 
 ```json
@@ -61,10 +67,9 @@ wabe_stop(w);
 
 ## Replay
 
-`wabed --record` writes raw samples and `wabe-replay` runs them back through the live code path.
-`probes/session.py` records your own: 45 seconds by default, `--full` for the calibration
-protocol. Both rest a laptop edge on a straightedge at each end, so the drift is against a known
-angle:
+`wabe serve --record` writes raw samples and `wabe-replay` runs them back through the live code path.
+You can test calibration by recording a trajectory with `probes/session.py`. Default is a 45 seconds sanity check, 
+or `--full` for an accuracy report. 
 
 ```bash
 curl -L -o session.jsonl.gz \
@@ -72,17 +77,6 @@ curl -L -o session.jsonl.gz \
 swift run wabe-replay session.jsonl.gz
 ```
 
-```
-still segments (>= 2 s, filter rest flag), settled values:
- 0     1.5s–  40.1s ( 38.6s)  yaw    +0.042°   lid  108.71°   screen  +19.18° above horizontal
- 1    72.0s– 152.2s ( 80.2s)  yaw    -2.207°   lid  110.85°   screen  +21.31° above horizontal
- 2   176.6s– 207.4s ( 30.7s)  yaw    -2.490°   lid  104.89°   screen  +15.33° above horizontal
- 3   228.4s– 252.7s ( 24.3s)  yaw    -2.414°   lid   92.38°   screen   +2.82° above horizontal
-```
-
-Yaw against a known angle after 30 s of hard handling, and the screen normal beside it: hinge
-readings replay alongside the IMU, so this exercises the composition and not just the attitude.
-The trajectory file it writes carries the same fields the socket publishes.
 
 ## Hardware
 
@@ -102,4 +96,4 @@ engineering: [NOTES.md](NOTES.md).
 - [olvvier](https://github.com/olvvier/apple-silicon-accelerometer) found the IMU and its wire format
 - [taigrr](https://github.com/taigrr/apple-silicon-accelerometer)'s Go port carried the wake sequence
 - [tcsenpai](https://github.com/tcsenpai/pybooklid) documented the feature-report path to the lid
-- [Laidig and Seel](https://github.com/dlaidig/vqf) designed VQF (*Information Fusion*, 2023)
+- [Laidig and Seel](https://github.com/dlaidig/vqf) authors of VQF (*Information Fusion*, 2023)

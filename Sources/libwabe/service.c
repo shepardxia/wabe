@@ -125,6 +125,14 @@ int wabe_serve(const wabe_service *cfg)
             cmd[n] = 0;
             if (strstr(cmd, "recenter"))
                 memcpy(clients[i].ref, o.q, sizeof(clients[i].ref));
+            // Just the pid: the asker resolves it to an executable and compares against its own,
+            // so the daemon needs to know nothing about how that comparison is made.
+            if (strstr(cmd, "info")) {
+                char reply[64];
+                int n2 = snprintf(reply, sizeof(reply), "{\"info\":\"wabe\",\"pid\":%d}\n",
+                                  (int)getpid());
+                send(clients[i].fd, reply, (size_t)n2, 0);
+            }
             const char *r = strstr(cmd, "rate ");
             if (r) {
                 double hz = atof(r + 5);

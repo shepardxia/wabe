@@ -56,7 +56,7 @@ final class PoseClient {
                 if !warnedDisconnected {
                     warnedDisconnected = true
                     let msg = "tavoletta: waiting for the wabe daemon on \(path)\n"
-                        + "  start it with `make install`, or `make && ./build/wabed`\n"
+                        + "  start it with `make install`, or `make && ./build/wabe serve`\n"
                     FileHandle.standardError.write(Data(msg.utf8))
                 }
                 Thread.sleep(forTimeInterval: 1)

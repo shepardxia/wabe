@@ -270,7 +270,7 @@ private struct Readout {
                ("normal", String(format: "%.1f°", c.elevationDeg), "above horizon"),
                ("peephole", String(format: "%.1f°", abs(c.offAxisDeg)), "off centre"),
                ("eye", String(format: "%.2f m", c.eyeDist), "")]
-            : [("waiting for the wabe daemon — make && ./build/wabed", "", "")]
+            : [("waiting for the wabe daemon — make && make install", "", "")]
 
         labels = rows.map { line($0.0, font: font, color: ink) }
         values = rows.map { line($0.1, font: font, color: ink) }
