@@ -33,8 +33,6 @@ wabe uninstall           stop and remove
 wabe serve [options]     daemon in the foreground
 ```
 
-`wabe` names the binary the daemon is actually running, so a rebuild you forgot to install says so.
-
 ## Usage
 
 `wabe serve` publishes newline JSON on `/tmp/wabe.sock`. Write `recenter\n` to zero your heading, or
