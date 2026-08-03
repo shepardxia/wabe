@@ -20,7 +20,7 @@ demonstration](https://en.wikipedia.org/wiki/Filippo_Brunelleschi#Linear_perspec
 ## Install
 
 ```bash
-make            # build/wabe, one binary, C only
+make
 make install    # run it at login
 ```
 
@@ -86,9 +86,8 @@ Verified on one machine, a 14-inch M4 Pro. The rest is secondhand, from other pr
 - Hinge encoder: 14- and 16-inch Pro, 15-inch Air, 13-inch Air from M2. The 13-inch Pro has none.
   Orientation still works without it: `lid` reads -1 and `n` stays zero, which is how you tell.
 
-These Macs carry no magnetometer, so yaw is relative to your last `recenter`, not a compass
-heading. At full rate the pipeline draws about 76 mW. Measurements and the sensor reverse
-engineering: [NOTES.md](NOTES.md).
+These Macs carry no magnetometer, so yaw is relative to your last `recenter`. At full rate the 
+pipeline draws about 76 mW. Measurements and the sensor reverse engineering: [NOTES.md](NOTES.md).
 
 ## Credits
 
