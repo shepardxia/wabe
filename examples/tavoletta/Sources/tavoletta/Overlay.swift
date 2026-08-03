@@ -64,10 +64,21 @@ func drawConstruction(_ c: Construction, in ctx: CGContext, size: CGSize) {
 // MARK: - The sun on the glass
 
 private func drawGlare(_ c: Construction, _ ctx: CGContext, _ size: CGSize) {
-    guard c.glintStrength > 0.02 else { return }
     ctx.saveGState()
     defer { ctx.restoreGState() }
 
+    // Sky off the glass: weakest at the bottom of the picture, which shows the pavement, and
+    // strongest at the top, which shows the sky itself.
+    let veil = c.veiling * 0.16
+    if veil > 0.003, let wash = CGGradient(colorsSpace: deviceRGB,
+                                          colors: [rgb(glareHex, veil * 0.25),
+                                                   rgb(glareHex, veil)] as CFArray,
+                                          locations: [0, 1]) {
+        ctx.drawLinearGradient(wash, start: CGPoint(x: 0, y: 0),
+                               end: CGPoint(x: 0, y: size.height), options: [])
+    }
+
+    guard c.glintStrength > 0.02 else { return }
     let sheen = pow(c.glintStrength, 34) * 0.15
     if sheen > 0.004 {
         ctx.setFillColor(rgb(glareHex, sheen))

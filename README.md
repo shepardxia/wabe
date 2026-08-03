@@ -17,6 +17,8 @@ puts the daemon and the control CLI in `~/.local/bin`: `wabe status`, `wabe watc
 
 ## Demo
 
+![The piazza holding still in the room while the laptop moves around it](demo.gif)
+
 ```bash
 make demo       # l: lines · r: recenter · [ ]: eye distance · q: quit
 ```

@@ -1,6 +1,5 @@
-// tavoletta — Brunelleschi's mirror, held by your MacBook's screen.
-//
-// In 1425 Brunelleschi painted the Florence Baptistery on a small panel, drilled a hole through it
+// tavoletta — Brunelleschi's 1425 mirror demonstration, held by your MacBook's screen. The glass
+// reflects Piazza del Duomo, pinned to the room; one degree of lid turns the picture by two.
 import AppKit
 import SceneKit
 

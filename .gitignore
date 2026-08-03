@@ -9,5 +9,9 @@ session-wabed.log
 captures/
 __pycache__/
 
+# Screen and phone recordings of the demo. The GIF in the README is committed; its source is not.
+*.mp4
+*.mov
+
 # Scratch harness for whoever is debugging the demo: headless renders, never shipped.
 examples/tavoletta/debug/

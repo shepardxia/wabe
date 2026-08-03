@@ -16,7 +16,9 @@ final class Apparatus {
         var construction: Construction
     }
 
-    var eyeDist = 0.20
+    /// Eye to glass, meters. Sets the field of view, and with it the lid band the piazza stays in
+    /// frame over, since the mirror swings the picture by twice any change in lid. [ and ] adjust it.
+    var eyeDist = 0.24
     var showLines = true
 
     let worldNode: SCNNode
@@ -143,6 +145,12 @@ final class Apparatus {
         let toEye = simd_normalize(eye - p.center)
         let sun = unreflected(Piazza.sunDirection)
         c.glintStrength = max(0, dot(p.normal, simd_normalize(sun + toEye)))
+        // Whatever the glass faces, it throws at the eye, and the sky is far brighter than the
+        // piazza: veiling rises as the mirror tilts off the pavement and onto the sky. This is the
+        // term that survives turning away from the sun, which the specular glint does not.
+        let seen = simd_reflect(-toEye, p.normal)
+        let skyward = asin(max(-1, min(1, seen.z))) * 180 / .pi
+        c.veiling = max(0, min(1, (skyward - 4) / 34))
 
         c.lidDeg = lid
         c.elevationDeg = asin(max(-1, min(1, p.normal.z))) * 180 / .pi

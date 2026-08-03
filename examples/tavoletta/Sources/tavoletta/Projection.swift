@@ -134,6 +134,9 @@ struct Construction {
     var glint: SIMD2<Double>? = nil
     /// How squarely the panel is catching the sun, 0 to 1: the specular alignment at its centre.
     var glintStrength: Double = 0
+    /// How much sky the glass is throwing back at the eye, 0 to 1. Separate from the glint because
+    /// it is the whole bright hemisphere and not the sun, so it survives facing away from it.
+    var veiling: Double = 0
 
     var lidDeg: Double = 0
     /// Angle of the screen normal above the horizontal.
