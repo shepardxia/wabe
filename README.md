@@ -35,8 +35,9 @@ wabe serve [options]     daemon in the foreground
 
 ## Usage
 
-`wabe serve` publishes newline JSON on `/tmp/wabe.sock`. Write `recenter\n` to zero your heading, or
-`rate 60\n` to set your update rate (30 Hz default, 200 Hz cap). Each connection keeps its own.
+`wabe serve` publishes newline JSON on `/tmp/wabe.sock`, and the same on `127.0.0.1:7465` for
+sandboxed apps such as screensavers. Write `recenter\n` to zero your heading, or `rate 60\n` to set
+your update rate (30 Hz default, 200 Hz cap). Each connection keeps its own.
 
 ```json
 {"t":1785423645.5060, "q":[0.9997,-0.0237,0.0009,0.0000], "rpy":[0.109,2.718,-0.000],

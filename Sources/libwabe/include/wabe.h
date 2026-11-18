@@ -34,6 +34,10 @@ typedef struct {
 // judging how the output looks has to be measured here, not at the sensor rate.
 #define WABE_DEFAULT_PUBLISH_HZ 30
 
+// The daemon serves on 127.0.0.1 at this port as well as on its unix socket: an app sandbox (a
+// screensaver's, for one) refuses unix sockets outside its container but allows loopback TCP.
+#define WABE_TCP_PORT 7465
+
 typedef struct {
     int sensor_hz;           // 0 -> WABE_DEFAULT_SENSOR_HZ
     const char *record_path; // NULL -> no capture; else raw samples written as JSONL
@@ -83,7 +87,8 @@ typedef struct {
     const char *socket_path; // NULL -> /tmp/wabe.sock
 } wabe_service;
 
-// Serve orientation as newline JSON on a unix socket, accepting "recenter" from clients.
+// Serve orientation as newline JSON on a unix socket and on 127.0.0.1:WABE_TCP_PORT, accepting
+// commands from clients.
 // Blocks; returns a WABE_ERR_* only on setup failure.
 int wabe_serve(const wabe_service *cfg);
 

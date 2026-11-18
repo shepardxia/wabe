@@ -1,10 +1,12 @@
-// Daemon: publishes orientation as newline JSON on a unix socket. Protocol v0: every line the
-// daemon sends is one orientation object; every line a client sends is a command (currently
-// just "recenter"). Sensors and tracking belong to live.c.
+// Daemon: publishes orientation as newline JSON on a unix socket and on loopback TCP, the same
+// protocol on both. Every line the daemon sends is one orientation object; every line a client
+// sends is a command ("recenter", "rate <hz>", "info"). Sensors and tracking belong to live.c.
 #include "internal.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,23 +17,40 @@
 
 #define MAX_CLIENTS 64
 
-static int listen_unix(const char *path)
+static int listen_on(const struct sockaddr *addr, socklen_t len)
 {
-    unlink(path);
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(addr->sa_family, SOCK_STREAM, 0);
     if (fd < 0)
         return -1;
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 || listen(fd, 8) != 0) {
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    if (bind(fd, addr, len) != 0 || listen(fd, 8) != 0) {
         close(fd);
         return -1;
     }
-    chmod(path, 0666);
     fcntl(fd, F_SETFL, O_NONBLOCK);
     return fd;
+}
+
+static int listen_unix(const char *path)
+{
+    unlink(path);
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+    int fd = listen_on((struct sockaddr *)&addr, sizeof(addr));
+    if (fd >= 0)
+        chmod(path, 0666);
+    return fd;
+}
+
+static int listen_loopback(uint16_t port)
+{
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port),
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
+    };
+    return listen_on((struct sockaddr *)&addr, sizeof(addr));
 }
 
 int wabe_serve(const wabe_service *cfg)
@@ -48,13 +67,18 @@ int wabe_serve(const wabe_service *cfg)
     if (!w)
         return err;
 
-    int server_fd = listen_unix(sock_path);
-    if (server_fd < 0) {
+    int unix_fd = listen_unix(sock_path);
+    if (unix_fd < 0) {
         fprintf(stderr, "wabed: cannot listen on %s: %s\n", sock_path, strerror(errno));
         wabe_stop(w);
         return WABE_ERR_SOCKET;
     }
+    // The port being taken most likely means another wabe holds it, and TCP clients reach that one.
+    int tcp_fd = listen_loopback(WABE_TCP_PORT);
+    if (tcp_fd < 0)
+        fprintf(stderr, "wabed: cannot listen on 127.0.0.1:%d: %s\n", WABE_TCP_PORT, strerror(errno));
     fprintf(stderr, "wabed: %.1f Hz publish, socket %s\n", publish_hz, sock_path);
+    const int listeners[] = {unix_fd, tcp_fd};
 
     // Each connection carries its own heading zero and its own rate.
     struct client {
@@ -99,22 +123,25 @@ int wabe_serve(const wabe_service *cfg)
             }
         }
 
-        for (;;) {
-            int fd = accept(server_fd, NULL, NULL);
-            if (fd < 0)
-                break;
-            if (nclients >= MAX_CLIENTS) {
-                close(fd);
-                continue;
+        for (size_t l = 0; l < sizeof(listeners) / sizeof(*listeners); l++) {
+            int fd;
+            while (listeners[l] >= 0 && (fd = accept(listeners[l], NULL, NULL)) >= 0) {
+                if (nclients >= MAX_CLIENTS) {
+                    close(fd);
+                    continue;
+                }
+                fcntl(fd, F_SETFL, O_NONBLOCK);
+                int one = 1;
+                setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+                // Nagle holds each line until the last is acknowledged, batching the stream.
+                if (listeners[l] == tcp_fd)
+                    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+                struct client *c = &clients[nclients++];
+                c->fd = fd;
+                memcpy(c->ref, o.q, sizeof(c->ref));  // heading zero starts where the client joined
+                c->interval = 1.0 / publish_hz;
+                c->next_pub = now;
             }
-            fcntl(fd, F_SETFL, O_NONBLOCK);
-            int one = 1;
-            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-            struct client *c = &clients[nclients++];
-            c->fd = fd;
-            memcpy(c->ref, o.q, sizeof(c->ref));  // heading zero starts where the client joined
-            c->interval = 1.0 / publish_hz;
-            c->next_pub = now;
         }
 
         char cmd[256];

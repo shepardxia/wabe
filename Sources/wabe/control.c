@@ -1,11 +1,13 @@
 // Talking to a daemon that is already running: the socket, the published line, and the question
 // of whether that daemon is the binary you just built.
 #include "cli.h"
+#include <wabe.h>
 
 #include <errno.h>
 #include <libproc.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
+#include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +44,22 @@ int wabe_connect(const char *sock_path)
         return -1;
     }
     return fd;
+}
+
+/// Whether anything accepts on the daemon's loopback port, the only way in from a sandbox.
+static int loopback_answers(void)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return 0;
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(WABE_TCP_PORT),
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
+    };
+    const int ok = connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0;
+    close(fd);
+    return ok;
 }
 
 int wabe_require(const char *sock_path)
@@ -255,6 +273,8 @@ int wabe_cmd_status(const char *sock_path)
     const double span = o.t - first.t;
     printf("socket   %s: %.0f Hz\n", sock_path, span > 1e-6 ? (count - 1) / span : 0.0);
     printf("daemon   %s%s\n", which, same ? "" : "   ← not this build, `wabe install` to replace it");
+    printf("tcp      127.0.0.1:%d: %s\n", WABE_TCP_PORT,
+           loopback_answers() ? "listening" : "not listening");
     if (o.lid < 0)
         printf("hinge    absent on this machine: no screen normal\n");
     printf("pose     ");

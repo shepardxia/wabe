@@ -183,6 +183,14 @@ applied — scale is not the limiting term.
   streams cannot be aligned by anyone reading it; measured here, the two clocks held a constant
   offset to 0.78 ms over 253 s, which is what makes a mis-stamped capture recoverable at all.
 
+- Screensavers run inside `legacyScreenSaver.appex`, which is app-sandboxed. Its entitlements
+  give `network.client` and read-only access to all of `/`, but no HID: device open is denied.
+  `network.client` expands to `(allow network-outbound (remote ip))`, which leaves unix sockets
+  out, so `/tmp/wabe.sock` is refused too. Measured with a binary signed with that appex's
+  entitlements, less the private ones: `connect()` to the socket gave EPERM, and to
+  `127.0.0.1:7465` it succeeded. The real host then read the daemon over TCP. That is why the
+  daemon also listens on loopback TCP.
+
 ## Hardware coverage
 
 Secondhand — only Mac16,6 was tested here.
